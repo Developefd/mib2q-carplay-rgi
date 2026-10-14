@@ -10,6 +10,8 @@
  * Non-route-guidance methods always delegate.
  *
  *
+ *
+ * Copyright (c) 2026 LuKa (@LuKa_dev)
  */
 package com.luka.carplay.rgd;
 
@@ -26,20 +28,74 @@ import de.audi.atip.interapp.combi.bap.navi.data.EtcStatus;
 public class GatedCombiService implements CombiBAPServiceNavi {
     final CombiBAPServiceNavi real;
     volatile boolean blockRouteGuidance;
+    /* FSG_OperationState is global NAVSD state.  Stock Navigation drives it through
+     * show/hideInitializingScreen while its own map starts.  That INITIALIZING state
+     * also covers the independent CarPlay displayable 99 on the VC, so defer the
+     * stock request for the complete altScreen ownership interval. */
+    private boolean blockInitializingState;
+    private boolean deferredInitializing;
+    private boolean haveDeferredInitializing;
     /* FctIDs 19/20/21/22/46 have different ownership from the rest of route guidance:
      * outside CarPlay RGI the stock navigator may keep driving the current/next-road
-     * text, the lower bar,
-     * travel information and destination menu; maneuver/lane records remain
+     * text, travel information and destination menu; maneuver/lane records remain
      * session-gated. */
     volatile boolean blockCurrentPositionInfo;
+    private boolean haveMapScale;
+    private int mapScaleAutoZoom, mapScaleValue, mapScaleUnit;
+    private boolean mapScaleAutoZoomActive, mapScaleIntersectionSupported;
+    private boolean haveAltitude;
+    private int altitudeValue, altitudeUnit;
 
     public GatedCombiService(CombiBAPServiceNavi r) { this.real = r; }
 
-    /** Route-data ownership. BAPBridge is the only writer for the maneuver FctIDs while CarPlay RGI
-     * is active.  Scale and altitude are NOT gated on this branch: the cluster shows the stock native
-     * map, so its native scale/altitude readouts in the lower bar stay visible. */
-    public void setRouteGuidanceBlocked(boolean active) {
+    /** Keep NAVSD operational while plane 99 owns the cluster.  The latest stock
+     * request is remembered and replayed on release; ClusterService additionally
+     * recomputes the authoritative state in case no edge occurred during takeover. */
+    public synchronized void setAltScreenTakeover(boolean active) {
+        if (blockInitializingState == active) return;
+
+        if (active) {
+            haveDeferredInitializing = false;
+            deferredInitializing = false;
+            blockInitializingState = true;
+            /* Clear an INITIALIZING value that may have been published before the
+             * wrapper was installed.  This is independent of stock map readiness. */
+            try { real.hideInitializingScreen(); } catch (Throwable t) { }
+            return;
+        }
+
+        blockInitializingState = false;
+        if (haveDeferredInitializing) {
+            try {
+                if (deferredInitializing) real.showInitializingScreen();
+                else real.hideInitializingScreen();
+            } catch (Throwable t) { }
+        }
+        haveDeferredInitializing = false;
+    }
+
+    /** Route-data ownership. BAPBridge is the only writer while CarPlay RGI is active.
+     * Keep stock compass and NAVSD state untouched; hide only scale and altitude. */
+    public synchronized void setRouteGuidanceBlocked(boolean active) {
+        if (blockRouteGuidance == active) return;
         blockRouteGuidance = active;
+        if (active) {
+            try { sendHiddenMapScale(); } catch (Throwable t) { }
+            try { real.updateAltitude(0x7FFF, 2); } catch (Throwable t) { }
+        } else {
+            try {
+                if (haveMapScale) real.updateMapScale(
+                    mapScaleAutoZoom, mapScaleAutoZoomActive, mapScaleValue,
+                    mapScaleUnit, mapScaleIntersectionSupported);
+            } catch (Throwable t) { }
+            try {
+                if (haveAltitude) real.updateAltitude(altitudeValue, altitudeUnit);
+            } catch (Throwable t) { }
+        }
+    }
+
+    private void sendHiddenMapScale() {
+        real.updateMapScale(15, false, 0xFFFF, 0xFF, false);
     }
 
     public void setCurrentPositionInfoBlocked(boolean blocked) {
@@ -79,9 +135,27 @@ public class GatedCombiService implements CombiBAPServiceNavi {
         if (!blockRouteGuidance) real.updateManeuverState(a);
     }
 
-    /* All other methods: pure delegation */
-    public void showInitializingScreen() { real.showInitializingScreen(); }
-    public void hideInitializingScreen() { real.hideInitializingScreen(); }
+    /* All other methods: pure delegation, except the stock NAVSD initialization
+     * state which must not mask an active altScreen plane. */
+    public synchronized void showInitializingScreen() {
+        if (blockInitializingState) {
+            deferredInitializing = true;
+            haveDeferredInitializing = true;
+            return;
+        }
+        real.showInitializingScreen();
+    }
+    public synchronized void hideInitializingScreen() {
+        if (blockInitializingState) {
+            deferredInitializing = false;
+            haveDeferredInitializing = true;
+            /* Reassert READY in case this callback crossed the takeover edge in
+             * the underlying BAP initialization manager. */
+            real.hideInitializingScreen();
+            return;
+        }
+        real.hideInitializingScreen();
+    }
     public void updateCompassInfo(int a, int b) { real.updateCompassInfo(a, b); }
     public void updateTurnToInfo(String a, String b) {
         if (!blockCurrentPositionInfo) real.updateTurnToInfo(a, b); }
@@ -109,13 +183,26 @@ public class GatedCombiService implements CombiBAPServiceNavi {
     public void updateSupportedMapViews(int a, int b) { real.updateSupportedMapViews(a, b); }
     public void updateMapVisibility(boolean a, boolean b) { real.updateMapVisibility(a, b); }
     public void updateMapOrientation(int a) { real.updateMapOrientation(a); }
-    public void updateMapScale(int a, boolean b, int c, int d, boolean e) {
-        real.updateMapScale(a, b, c, d, e);   /* native map scale — not gated on this branch */
+    public synchronized void updateMapScale(int a, boolean b, int c, int d, boolean e) {
+        mapScaleAutoZoom = a;
+        mapScaleAutoZoomActive = b;
+        mapScaleValue = c;
+        mapScaleUnit = d;
+        mapScaleIntersectionSupported = e;
+        haveMapScale = true;
+        /* A steering-wheel MapScale SetGet must always receive a Status.  The
+         * BAP framework bypasses value deduplication while setGetPending=true,
+         * so resending the hidden value is both the ACK and the visibility rule. */
+        if (blockRouteGuidance) sendHiddenMapScale();
+        else real.updateMapScale(a, b, c, d, e);
     }
     public void updateDestinationInfo(CombiBAPDestinationInfo a) {
         if (!blockCurrentPositionInfo) real.updateDestinationInfo(a); }
-    public void updateAltitude(int a, int b) {
-        real.updateAltitude(a, b);            /* native altitude — not gated on this branch */
+    public synchronized void updateAltitude(int a, int b) {
+        altitudeValue = a;
+        altitudeUnit = b;
+        haveAltitude = true;
+        if (!blockRouteGuidance) real.updateAltitude(a, b);
     }
     public void updateOnlineNavigationState(int a, int b, int c) {
         real.updateOnlineNavigationState(a, b, c); }

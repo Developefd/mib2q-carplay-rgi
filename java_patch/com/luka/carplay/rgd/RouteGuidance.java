@@ -37,8 +37,8 @@ public class RouteGuidance implements CarplayBus.Listener {
     private BAPBridge bap;
     private volatile boolean running;
     private boolean rgActive = false;
-    /* Separate from rgActive: route intent/BAP ownership may already be active while stock
-     * ctx 74 is still held.  FRAME_READY gates the route-text scroll and cached-state replay. */
+    /* Separate from rgActive: route intent/BAP ownership may already be active while ctx 81 is
+     * still held.  It flips only after BAP update + maneuver renderer FRAME_READY. */
     private boolean presentationConfirmed = false;
     /* One WARN per pending episode; the retry runs on every RG update. */
     private boolean bapStartPendingLogged = false;
@@ -61,15 +61,15 @@ public class RouteGuidance implements CarplayBus.Listener {
     private static final long PRESENTATION_RETRY_MS = 500L;
     private static final long INFO_TIME_HOLD_MS = 20000L;
 
-    private final com.luka.carplay.core.ScreenModule.ViewAreaModeListener viewAreaModeListener =
-        new com.luka.carplay.core.ScreenModule.ViewAreaModeListener() {
+    private final com.luka.carplay.core.AltScreenModule.ViewAreaModeListener viewAreaModeListener =
+        new com.luka.carplay.core.AltScreenModule.ViewAreaModeListener() {
             public void onViewAreaModeChanged(int mode) {
                 requestViewAreaRefresh(mode);
             }
         };
 
-    private final com.luka.carplay.core.ScreenModule.InfoModeListener infoModeListener =
-        new com.luka.carplay.core.ScreenModule.InfoModeListener() {
+    private final com.luka.carplay.core.AltScreenModule.InfoModeListener infoModeListener =
+        new com.luka.carplay.core.AltScreenModule.InfoModeListener() {
             public void onInfoModeToggle() {
                 requestInfoModeToggle();
             }
@@ -324,8 +324,8 @@ public class RouteGuidance implements CarplayBus.Listener {
             return false;
         }
         bap.setPresentationListener(bapPresentationListener);
-        com.luka.carplay.core.ScreenModule.setViewAreaModeListener(viewAreaModeListener);
-        com.luka.carplay.core.ScreenModule.setInfoModeListener(infoModeListener);
+        com.luka.carplay.core.AltScreenModule.setViewAreaModeListener(viewAreaModeListener);
+        com.luka.carplay.core.AltScreenModule.setInfoModeListener(infoModeListener);
         com.luka.carplay.cluster.ClusterLayerController.setViewportListener(viewportListener);
 
         Log.i(TAG, "Initialized");
@@ -347,8 +347,8 @@ public class RouteGuidance implements CarplayBus.Listener {
         }
         /* stop() clears static listeners so a restarted module never retains a
          * stale RouteGuidance instance. Re-register both session inputs here. */
-        com.luka.carplay.core.ScreenModule.setViewAreaModeListener(viewAreaModeListener);
-        com.luka.carplay.core.ScreenModule.setInfoModeListener(infoModeListener);
+        com.luka.carplay.core.AltScreenModule.setViewAreaModeListener(viewAreaModeListener);
+        com.luka.carplay.core.AltScreenModule.setInfoModeListener(infoModeListener);
         com.luka.carplay.cluster.ClusterLayerController.setViewportListener(viewportListener);
         if (bap != null) bap.setPresentationListener(bapPresentationListener);
         final int generation;
@@ -366,7 +366,7 @@ public class RouteGuidance implements CarplayBus.Listener {
             presentationThread.setDaemon(true);
             presentationThread.start();
         }
-        com.luka.carplay.core.ScreenModule.setNavActive(false);
+        com.luka.carplay.core.AltScreenModule.setNavActive(false);
 
         CarplayBus bus = CarplayBus.getInstance();
         bus.on(CarplayBus.EVT_RGD_UPDATE, this);
@@ -408,15 +408,15 @@ public class RouteGuidance implements CarplayBus.Listener {
             presentationConfirmed = false;
             hasRouteUpdate = false;
             routeWantsActive = false;
-            com.luka.carplay.core.ScreenModule.setNavActive(false);
+            com.luka.carplay.core.AltScreenModule.setNavActive(false);
             if (bap != null) {
                 bap.onStop();
                 bap.onShutdown();
                 bap.setPresentationListener(null);
             }
         }
-        com.luka.carplay.core.ScreenModule.clearViewAreaModeListener(viewAreaModeListener);
-        com.luka.carplay.core.ScreenModule.clearInfoModeListener(infoModeListener);
+        com.luka.carplay.core.AltScreenModule.clearViewAreaModeListener(viewAreaModeListener);
+        com.luka.carplay.core.AltScreenModule.clearInfoModeListener(infoModeListener);
         com.luka.carplay.cluster.ClusterLayerController.clearViewportListener(viewportListener);
         if (worker != null && worker != Thread.currentThread()) {
             try { worker.join(1000L); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
@@ -459,7 +459,7 @@ public class RouteGuidance implements CarplayBus.Listener {
             rgActive = false;
             presentationConfirmed = false;
             routeWantsActive = false;
-            com.luka.carplay.core.ScreenModule.setNavActive(false);  /* hide layers (stock ctx 74) */
+            com.luka.carplay.core.AltScreenModule.setNavActive(false);  /* hide layers (ctx 81) */
             hasRouteUpdate = false;
             state.reset();
             return;
@@ -539,10 +539,10 @@ public class RouteGuidance implements CarplayBus.Listener {
                  * for the text hold and position scroll, but no longer gates the context. */
                 presentationConfirmed = false;
                 rgActive = bap != null && bap.onStart();
-                com.luka.carplay.core.ScreenModule.setNavActive(rgActive);
+                com.luka.carplay.core.AltScreenModule.setNavActive(rgActive);
                 if (!rgActive) {
                     if (!bapStartPendingLogged) {
-                        Log.w(TAG, "RG activation pending: BAP start did not complete; keeping ctx 74");
+                        Log.w(TAG, "RG activation pending: BAP start did not complete; keeping ctx 81");
                         bapStartPendingLogged = true;
                     }
                     requestPresentationCheck("bap-start-pending");
@@ -560,8 +560,8 @@ public class RouteGuidance implements CarplayBus.Listener {
                 if (bap != null) { bap.onStop(); bap.onRouteEnd(); }
                 rgActive = false;
                 presentationConfirmed = false;
-                /* RGI off -> hide the CarPlay cluster layers (stock ctx 74). */
-                com.luka.carplay.core.ScreenModule.setNavActive(false);
+                /* RGI off -> hide the CarPlay cluster layers (ctx 81 = map only). */
+                com.luka.carplay.core.AltScreenModule.setNavActive(false);
             }
         }
 
@@ -619,7 +619,7 @@ public class RouteGuidance implements CarplayBus.Listener {
             presentationLock.notifyAll();
         }
         Log.i(TAG, "viewArea info phase reset=0 queued: "
-            + (mode == com.luka.carplay.core.ScreenModule.VIEWAREA_SMALLSCREEN ? "smallscreen" : "fullscreen"));
+            + (mode == com.luka.carplay.core.AltScreenModule.VIEWAREA_SMALLSCREEN ? "smallscreen" : "fullscreen"));
     }
 
     /** Steering-wheel encoder press: toggle phase without touching the HMI/BAP caller thread. */
@@ -787,7 +787,7 @@ public class RouteGuidance implements CarplayBus.Listener {
         if (!rgActive) {
             rgActive = bap.onStart();
             if (!rgActive) return true;
-            com.luka.carplay.core.ScreenModule.setNavActive(true);
+            com.luka.carplay.core.AltScreenModule.setNavActive(true);
         }
 
         // FRAME_READY can win the race with the worker's first wake. Rebase
@@ -824,6 +824,12 @@ public class RouteGuidance implements CarplayBus.Listener {
         // Keep failed HUD/renderer updates across subsequent distance-only deltas.
         if (d.has("route_generation")) {
             long generation = d.num64("route_generation", -1L);
+            if (generation >= 0L && state.routeGeneration >= 0L && generation < state.routeGeneration) {
+                // Native generations use a monotonic clock, including hook respawns. Drop the
+                // entire old frame before it can clear route authority, slots or pending dirty bits.
+                // A real disconnect resets state, allowing the next session's first generation.
+                return;
+            }
             if (generation >= 0L && generation != state.routeGeneration) {
                 // Native resets can be hidden by debounce and reuse every slot
                 // version. Reset content before applying this generation's fields,
