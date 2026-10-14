@@ -75,16 +75,17 @@ run mount.txt mount
 run df.txt df -k
 run ifconfig.txt ifconfig -a
 run netstat_rn.txt netstat -rn
+run pf_rules.txt pfctl -sr
 run sloginfo_mmx.txt sloginfo
 run sloginfo_rcc.txt on -f rcc sloginfo
-run hooks_ls.txt ls -la /mnt/app/root/hooks /mnt/app/eso/hmi/lsd/jars /mnt/app/eso/bin/apps/smartphone_integrator
+run hooks_ls.txt ls -la /mnt/app/root/hooks /mnt/app/eso/hmi/lsd/jars /mnt/app/eso/bin/apps/smartphone_integrator /mnt/app/armle/lib/dll/deva-ctrl-qc.so
 run carplay_stock_ls.txt find /mnt/app /mnt/system -name '*.carplay-stock'
 run tmp_ls.txt ls -la "$SRC"
 run cores_ls.txt ls -la /mnt/ota/system/core
 
 # ---- logs and captures from /tmp (never the shared-memory objects also living there) ----
 mkdir "$OUT/tmp"
-for f in "$SRC"/*.log "$SRC"/*.log.* "$SRC"/carplay_* "$SRC"/*.pid; do
+for f in "$SRC"/*.log "$SRC"/*.log.* "$SRC"/carplay_* "$SRC"/spatial_* "$SRC"/*.pid; do
     [ -f "$f" ] || continue
     cp "$f" "$OUT/tmp/" 2>/dev/null || echo "copy failed: $f" >> "$OUT/info.txt"
 done
@@ -92,14 +93,15 @@ done
 # ---- configs we patch ----
 mkdir "$OUT/config"
 for f in /mnt/system/etc/eso/production/dio_manager.json \
-         /mnt/system/etc/eso/production/smartphone_integrator.json; do
+         /mnt/system/etc/eso/production/smartphone_integrator.json \
+         /mnt/system/etc/pf.conf /mnt/system/etc/pf.ecm0.conf; do
     [ -f "$f" ] && cp "$f" "$OUT/config/" 2>/dev/null
 done
 
 # ---- crash dumps of our processes (dumper writes them to /mnt/ota/system/core) ----
 mkdir "$OUT/core"
-for f in /mnt/ota/system/core/dio_manager* /mnt/ota/system/core/maneuver_render* \
-         /mnt/ota/system/core/smartphone_integrator*; do
+for f in /mnt/ota/system/core/dio_manager* /mnt/ota/system/core/altscreen_render* \
+         /mnt/ota/system/core/maneuver_render* /mnt/ota/system/core/smartphone_integrator*; do
     [ -f "$f" ] && cp "$f" "$OUT/core/" 2>/dev/null
 done
 
