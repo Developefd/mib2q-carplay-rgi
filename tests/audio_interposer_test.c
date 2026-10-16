@@ -33,6 +33,7 @@ static unsigned char *image_base;
 static int request_object, response_object, streams_object, desc_object, key_object;
 static int request_refs, response_refs, socket_opens, stock_teardowns;
 static int teardown_empty_array, teardown_stream_type = 103;
+static int desc_is_media = 1;   /* isMedia in the 103 descriptor: 1, 0, or -1 = absent */
 static void *native_teardown_request, *module_teardown_request;
 static pthread_mutex_t fault_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fault_cond = PTHREAD_COND_INITIALIZER;
@@ -284,7 +285,7 @@ static void *fake_dict_get(const void *dict, const void *key)
         if (!strcmp(name, "audioType")) return "media";
         if (!strcmp(name, "shk")) return &key_object;
         if (!strcmp(name, "type") || !strcmp(name, "audioFormatIndex") ||
-            !strcmp(name, "spf") || !strcmp(name, "isMedia") ||
+            !strcmp(name, "spf") || (!strcmp(name, "isMedia") && desc_is_media >= 0) ||
             !strcmp(name, "packetFormatAPAP") || !strcmp(name, "audioFormat"))
             return &desc_object; /* presence check; numeric value comes from GetInt64 */
     }
@@ -298,7 +299,8 @@ static int64_t fake_dict_int(const void *dict, const void *key, int32_t *error)
         if (!strcmp(name, "type")) return teardown_stream_type;
         if (!strcmp(name, "audioFormatIndex")) return 65;
         if (!strcmp(name, "spf")) return 1024;
-        if (!strcmp(name, "isMedia") || !strcmp(name, "packetFormatAPAP")) return 1;
+        if (!strcmp(name, "isMedia")) return desc_is_media;
+        if (!strcmp(name, "packetFormatAPAP")) return 1;
         if (!strcmp(name, "audioFormat")) return 0;
     }
     *error = -1;
@@ -676,6 +678,15 @@ static void teardown_scope_tests(void)
     puts("audio_interposer_test: NULL/missing/empty/selective TEARDOWN scope PASS");
 }
 
+static void setup_descriptor_tests(void)
+{
+    desc_is_media = 1;  assert(spa103_validate_setup_stream(&desc_object, 65, 1));
+    desc_is_media = -1; assert(spa103_validate_setup_stream(&desc_object, 65, 1)); /* iOS 26.6 */
+    desc_is_media = 0;  assert(!spa103_validate_setup_stream(&desc_object, 65, 1));
+    desc_is_media = 1;
+    puts("audio_interposer_test: 103 SETUP isMedia true/absent accepted, false rejected PASS");
+}
+
 static void observe_teardown(void *session, void *request, int reason)
 { (void)session; (void)reason; module_teardown_request = request; }
 static const hook_module_def_t teardown_observer = {
@@ -894,6 +905,7 @@ int main(void)
     absent_cleanup_generation();
     control_generation_tests();
     teardown_scope_tests();
+    setup_descriptor_tests();
     buffered_contract_tests();
     free(spa_pcm_sink.scratch);
     spa_pcm_sink.scratch = NULL; spa_pcm_sink.scratchBytes = 0;

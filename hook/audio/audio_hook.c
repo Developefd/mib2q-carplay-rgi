@@ -892,8 +892,11 @@ static int spa103_validate_setup_stream(const void *streamDesc,
                   (long long)value, 1024u);
         return 0;
     }
-    if (!spa_cf_get_i64(streamDesc, "isMedia", &value) || !value) {
-        LOG_ERROR(LOG_MODULE, "buffer103: rejecting SETUP without isMedia=true");
+    /* iOS 26.6 sends no isMedia (nor clientID) for Apple Music; audioType below
+     * identifies the stream.  Only an explicit false is not ours (issue #42). */
+    value = -1;
+    if (spa_cf_get_i64(streamDesc, "isMedia", &value) && !value) {
+        LOG_ERROR(LOG_MODULE, "buffer103: rejecting SETUP with isMedia=false");
         return 0;
     }
     if (!spa_cf_get_string(streamDesc, "audioType", text, sizeof(text)) ||
