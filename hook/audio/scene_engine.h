@@ -9,8 +9,8 @@
  *  - float32 arithmetic, no FMA (the QNX/ARMv7 build has none; host builds use -ffp-contract=off), no
  *    allocation after scene_engine_init(), no dependency on the rest of the hook (standalone testable).
  *  - One instance = one stereo stream. Sample rate 48 kHz, analysis 1024/256 (SCENE_NFFT/SCENE_HOP).
- *  - Masks: the hook's mask net emits one row per 512 input samples (SCENE_MASK_HOP) on a 257-bin grid
- *    (512-point analysis) or 1025 bins (2048-point, net c). scene_engine_set_mask() installs the row that
+ *  - Masks: the hook's mask net emits one row per 512 input samples (SCENE_MASK_HOP) on the 257-bin grid
+ *    of a 512-point analysis (net c analyses 2048 points and strides down to it). scene_engine_set_mask() installs the row that
  *    applies to every frame t with (t * SCENE_HOP) / SCENE_MASK_HOP == row index, exactly like the Python
  *    indexing of inst_mask[ctrl]; when no mask is set the semantic stage and the duck are off (spatial only).
  */
@@ -94,7 +94,7 @@ struct scene_config {
     float inst_attack_ms          ; /* default 300.0f */
     float inst_release_ms         ; /* default 30.0f */
     int   inst_mask_nfft          ; /* default 512 */
-    int   inst_mask_hop           ; /* default 512 */
+    int   inst_mask_hop           ; /* default 512; must be SCENE_MASK_HOP (init refuses others) */
     float inst_gamma              ; /* default 1.0f */
     float inst_thresh             ; /* default 0.0f */
     float inst_gamma_lo           ; /* default 0.0f */

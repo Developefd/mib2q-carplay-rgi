@@ -93,15 +93,14 @@ export AUDIO_STEREO_LFE_GAIN=0
 # (docs/audio/UPMIX_CODE_RETIREMENT_2026-10-09.md).  The rears and fronts leave at the engine's own
 # levels: only AUDIO_STEREO_LFE / LFE_GAIN and the cabin guard apply on top.  The blob is the fine mask
 # net c ('SMSKNET1', 32,544 B, models/scene-masknet-c/); comment the BLOB line out for the spatial-only
-# A/B (no instrument transfer, no duck; the hook logs "SCENE: mask net" / "running without a mask" once).
+# A/B (no instrument transfer, no duck; the hook logs "mask net none (spatial only)").  A BLOB that is set
+# but unreadable or rejected, or a worker that cannot start, means no upmix at all (plain stereo, logged).
 # The seven knobs below are the engine defaults, spelled out so the running config can be read here.
 # The net (1.37 M ARMv7 instructions per 512-frame control, NEON) runs on its own thread
 # (scene_mask_worker.h, SCHED_RR 17): the audio thread pays only the hand-off (~1 k instructions per
 # period), a net slower than realtime skips controls instead of stalling the audio ("scene mask worker
 # stopped rows=A/B skipped=N" at stream stop; N = controls refused, 0 when it keeps up), and its rows
-# apply one control (10.7 ms) late.  AUDIO_SCENE_MASK_SYNC=1 puts the net back on the audio thread
-# (the port tests' exact timing, ~3.1 M instructions per 768-frame period under the 12 ms guard): an
-# A/B lever, not the default.
+# apply one control (10.7 ms) late.  The net never runs on the audio thread.
 export AUDIO_SCENE_MASK_BLOB="$H/scene_masknet_c.bin"
 export AUDIO_SCENE_REAR_DELAY_MS=0
 export AUDIO_SCENE_INST_GAMMA=1

@@ -140,8 +140,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("output/r2/soundamp"),
-        help="destination directory (default: output/r2/soundamp)",
+        default=Path("assets/soundamp"),
+        help="destination directory (default: assets/soundamp)",
     )
     return parser.parse_args()
 

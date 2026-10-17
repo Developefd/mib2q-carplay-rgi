@@ -71,7 +71,7 @@ class SceneConfig:
     same_sign_below_hz: float = 550.0 # ambient pair in phase below this (no low-mid hole)
     side_lp_hz: float = 7000.0        # side layer rolled off above 7 kHz (DEV40 08.10: drums .17 -> .13, nothing else moves; the air layer keeps the treble behind); 0 = full band
     decorrelate_ambient: bool = True  # static per-bin phase table, different for Ls and Rs
-    rear_delay_ms: float = 0.0        # signed: + delays the rear, - delays the front (rear-lead). Variant J (09.10): 0, the J525 rear bus is ~11.8 ms late by itself and our rear meets the amp's front bleed in phase at the doors
+    rear_delay_ms: float = 0.0        # signed: + delays the rear, - delays the front (rear-lead). Variant J (09.10): 0, the J525 rear doors trail the front ~5.2 ms by themselves and our rear meets the amp's front bleed in phase at the doors
     bleed_cancel: float = 0.0         # J525 bank-1: the rear-door bus = 0.707*L + 2.0*Ls; Ls -= coef*L cancels the amp's front bleed (0.355 doors, 0.251 effect bus); 0 = off, needs the cabin tone probe for the tap offset
     bleed_cancel_offset_ms: float = 0.0
     front_keep_db: float = 0.0        # front anchor: the most the transfers may take from the front, dB over ~1 s (sparse wide mixes); 0 = off

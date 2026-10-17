@@ -82,7 +82,8 @@ int scene_engine_init(struct scene_state *s, const struct scene_config *cfg)
 
     memset(s, 0, sizeof *s);
     s->cfg = *cfg;
-    if (cfg->n_fft != N || cfg->hop != H || !cfg->erb_pool || (!cfg->cluster && cfg->unmix))
+    if (cfg->n_fft != N || cfg->hop != H || cfg->inst_mask_hop != SCENE_MASK_HOP ||
+        !cfg->erb_pool || (!cfg->cluster && cfg->unmix))
         return -1;
     s->F = SCENE_BINS;
     s->G = scene_erb_groups(SCENE_BINS, N, s->group, s->group_freq, s->group_count);

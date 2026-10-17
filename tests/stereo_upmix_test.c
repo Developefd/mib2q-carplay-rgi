@@ -132,7 +132,6 @@ static void test_default_validation_and_fail_closed(void)
     assert(config.lfe_gain_q15 == SPA_STEREO_UPMIX_LFE_Q15_DEFAULT);
     assert(config.lfe_enabled == 0);
     assert(config.backend == SPA_STEREO_UPMIX_OFF);
-    assert(config.scene_mask_blob == NULL);
     assert(config.scene_mask_provider == NULL);
     assert(config.scene.n_fft == SCENE_NFFT && config.scene.hop == SCENE_HOP);
     assert(spa_stereo_upmix_backend_supported(SPA_STEREO_UPMIX_OFF));
@@ -306,35 +305,17 @@ static void test_corrected_guard_extremes(void)
     }
 }
 
-static uint32_t g_scene_boundaries, g_scene_rows;
-static uint64_t g_scene_last_pushed;
-
-static void scene_observer(uint64_t pushed, const float *elig, const float *prot)
-{
-    assert(pushed % 512u == 256u);
-    assert(g_scene_boundaries == 0 || pushed == g_scene_last_pushed + 512u);
-    assert((elig == NULL) == (prot == NULL));
-    g_scene_last_pushed = pushed;
-    g_scene_boundaries++;
-    if (elig) {
-        g_scene_rows++;
-        assert(elig[0] == 0.0f && prot[0] == 1.0f && elig[SMASK_BINS - 1] == 0.0f);
-    }
-}
-
 static void test_scene_backend_smoke(void)
 {
     static struct spa_stereo_upmix state;
-    static struct scene_mask_weights blob;
     struct spa_stereo_upmix_config config;
     size_t frame, count;
-    unsigned i;
     int nonzero = 0;
 
     fill_stereo(UINT32_C(0x5343454e), 0);
     spa_stereo_upmix_default_config(&config);
     config.backend = SPA_STEREO_UPMIX_SCENE;
-    assert(config.scene_mask_blob == NULL);
+    assert(config.scene_mask_provider == NULL);
     assert(spa_stereo_upmix_init(&state, &config) == SPA_STEREO_UPMIX_OK);
     assert(state.config.front_gain_q15 == 32768u);
     assert(!state._runtime._scene_mask_on);
@@ -363,64 +344,20 @@ static void test_scene_backend_smoke(void)
     }
     assert(memcmp(g_output_a, g_output_b, sizeof(g_output_a)) == 0);
 
-    /* the setter: the exact size, magic and dimensions or nothing */
-    memset(&blob, 0, sizeof(blob));
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob));
-    assert(config.scene_mask_blob == NULL);
-    memcpy(blob.magic, SMASK_MAGIC, sizeof(blob.magic));
-    blob.ch = SMASK_CH;
-    blob.hidden = SMASK_HID;
-    blob.n_out = SMASK_OUT;
-    for (i = 0; i < SMASK_FEAT; ++i) blob.feat_std[i] = 1.0f;
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob) - 1u);
-    assert(config.scene_mask_blob == NULL);
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob));
-    assert(config.scene_mask_blob == &blob);
-    blob.ch = SMASK_CH + 1u;
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob));
-    assert(config.scene_mask_blob == NULL);
-    blob.ch = SMASK_CH;
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob));
-    assert(config.scene_mask_blob == &blob);
-
-    /* zero weights: every posterior sigmoid(0) = 0.5, no eligible output ->
-     * elig 0 / prot 1, so the duck engages and the LFE steering sees 0.5 */
-    assert(spa_stereo_upmix_init(&state, &config) == SPA_STEREO_UPMIX_OK);
-    assert(state._runtime._scene_mask_on);
-    spa_stereo_upmix_test_scene_mask_observer = scene_observer;
-    process_blocks(&state, g_input, g_output_b);
-    assert(g_scene_boundaries == (TEST_FRAMES - 256u) / 512u + 1u);
-    assert(g_scene_rows == g_scene_boundaries - 2u);
-    assert(memcmp(g_output_a, g_output_b, sizeof(g_output_a)) != 0);
-    assert(state._runtime._scene_lfe_bass > 0.4f && state._runtime._scene_lfe_bass <= 0.5f);
-    assert(state._runtime._scene_lfe_drum > 0.4f && state._runtime._scene_lfe_drum <= 0.5f);
-    for (frame = 0; frame < TEST_FRAMES; ++frame) {
-        const int16_t *out = g_output_b + frame * TEST_CHANNELS;
-
-        assert(out[SPA_STEREO_UPMIX_CHANNEL_C] == 0 && out[SPA_STEREO_UPMIX_CHANNEL_LFE] == 0);
-        if (frame < SPA_SCENE_LATENCY_FRAMES)
-            assert(!out[0] && !out[1] && !out[4] && !out[5]);
-    }
-    /* reset with the net: the same cadence and the same render again */
-    g_scene_boundaries = g_scene_rows = 0;
-    assert(spa_stereo_upmix_reset(&state) == SPA_STEREO_UPMIX_OK);
-    process_blocks(&state, g_input, g_overlap);
-    spa_stereo_upmix_test_scene_mask_observer = NULL;
-    assert(g_scene_rows == g_scene_boundaries - 2u);
-    assert(memcmp(g_overlap, g_output_b, sizeof(g_output_b)) == 0);
-
     config.backend = SPA_STEREO_UPMIX_OFF;
     assert(spa_stereo_upmix_init(&state, &config) == SPA_STEREO_UPMIX_OK);
     assert(spa_stereo_upmix_scene_track_change(&state) == SPA_STEREO_UPMIX_ERROR_UNSUPPORTED);
     assert(spa_stereo_upmix_scene_track_change(NULL) == SPA_STEREO_UPMIX_ERROR_ARGUMENT);
 }
 
-/* SCENE with the mask net on the worker (scene_mask_worker.h), the same
- * zero-weight blob (rows elig 0 / prot 1).  Three runs:
+/* SCENE with the mask net on the worker (scene_mask_worker.h, the only place
+ * it runs), a zero-weight blob: every posterior sigmoid(0) = 0.5, no eligible
+ * output -> rows elig 0 / prot 1, the duck engages and the LFE steering sees
+ * 0.5.  The blob is accepted by its magic and dimensions only.  Three runs:
  *  1. driven by hand (no thread, every job stepped after each block): every
  *     row is applied at the boundary after its own, never earlier, from the
- *     fourth boundary on (the audio-thread net: the third), no job refused,
- *     and the two renders agree until the first row lands;
+ *     fourth boundary on, no job refused, the render agrees with the spatial
+ *     one (no net) until the first row lands, and reset() renders it again;
  *  2. a thread whose net sleeps 1 ms, a driver paced at half realtime: no job
  *     is lost (busy 0, every job completed), rows one or two boundaries late
  *     (two when a 768-frame block holds two boundaries), in order, each once;
@@ -429,7 +366,7 @@ static void test_scene_backend_smoke(void)
  *     jobs are refused instead of waited for (busy > 0), the rows that come
  *     are still in order and late, nothing is lost from the accounting. */
 static struct spa_stereo_upmix g_worker_state;    /* the observer reads its sequence numbers */
-static struct spa_stereo_upmix g_sync_state;
+static struct spa_stereo_upmix g_plain_state;
 static struct spa_scene_mask_worker g_worker;
 static uint32_t g_worker_rows, g_worker_boundaries, g_worker_last_sequence;
 static uint32_t g_worker_first_row_boundary, g_worker_max_lateness;
@@ -518,20 +455,24 @@ static void test_scene_mask_worker(void)
     unsigned i;
 
     fill_stereo(UINT32_C(0x574f524b), 0);
+    spa_stereo_upmix_default_config(&config);
+    config.backend = SPA_STEREO_UPMIX_SCENE;
+
+    /* the spatial reference: no net */
+    assert(spa_stereo_upmix_init(&g_plain_state, &config) == SPA_STEREO_UPMIX_OK);
+    assert(!g_plain_state._runtime._scene_mask_on);
+    process_blocks(&g_plain_state, g_input, g_output_a);
+
+    /* the blob: the magic and dimensions, or no worker */
     memset(&blob, 0, sizeof(blob));
+    assert(spa_scene_mask_worker_start(&g_worker, &blob, 1u, SPA_SCENE_MASK_WORKER_NO_THREAD) == -1);
     memcpy(blob.magic, SMASK_MAGIC, sizeof(blob.magic));
-    blob.ch = SMASK_CH;
+    blob.ch = SMASK_CH + 1u;
     blob.hidden = SMASK_HID;
     blob.n_out = SMASK_OUT;
     for (i = 0; i < SMASK_FEAT; ++i) blob.feat_std[i] = 1.0f;
-    spa_stereo_upmix_default_config(&config);
-    config.backend = SPA_STEREO_UPMIX_SCENE;
-    spa_stereo_upmix_config_set_scene_mask_blob(&config, &blob, sizeof(blob));
-    assert(config.scene_mask_blob == &blob);
-
-    /* the audio-thread reference */
-    assert(spa_stereo_upmix_init(&g_sync_state, &config) == SPA_STEREO_UPMIX_OK);
-    process_blocks(&g_sync_state, g_input, g_output_a);
+    assert(spa_scene_mask_worker_start(&g_worker, &blob, 1u, SPA_SCENE_MASK_WORKER_NO_THREAD) == -1);
+    blob.ch = SMASK_CH;
 
     /* 1. by hand */
     assert(spa_scene_mask_worker_start(NULL, &blob, 1u, 0) == -1);
@@ -548,9 +489,11 @@ static void test_scene_mask_worker(void)
     assert(stats.submitted == g_worker_boundaries && stats.completed == g_worker_boundaries);
     assert(stats.busy == 0 && stats.stale_discarded == 0 && stats.superseded == 0);
     assert(stats.resets == 1);
-    assert(g_worker_rows == g_worker_boundaries - 3u);      /* sync: boundaries - 2 */
-    assert(g_worker_first_row_boundary == 4u);              /* sync: 3 */
+    assert(g_worker_rows == g_worker_boundaries - 3u);      /* the net primes on two, the worker adds one */
+    assert(g_worker_first_row_boundary == 4u);
     assert(g_worker_max_lateness == 1u);
+    assert(g_worker_state._runtime._scene_lfe_bass > 0.4f && g_worker_state._runtime._scene_lfe_bass <= 0.5f);
+    assert(g_worker_state._runtime._scene_lfe_drum > 0.4f && g_worker_state._runtime._scene_lfe_drum <= 0.5f);
     for (frame = 0; frame < TEST_FRAMES; ++frame) {
         const int16_t *a = g_output_a + frame * TEST_CHANNELS;
         const int16_t *b = g_output_b + frame * TEST_CHANNELS;
@@ -559,10 +502,14 @@ static void test_scene_mask_worker(void)
         if (first_diff == TEST_FRAMES && memcmp(a, b, TEST_CHANNELS * sizeof(*a)) != 0)
             first_diff = frame;
     }
-    /* the audio-thread row lands at 1280 pushed frames, 1024 of latency later
-     * in the output: identical before that, different after (the duck starts
-     * one control later on the worker) */
-    assert(first_diff >= 1280u - SPA_SCENE_LATENCY_FRAMES && first_diff < TEST_FRAMES);
+    /* the first row lands at the fourth boundary (1792 pushed frames), 1024 of
+     * latency later in the output: identical before that, different after */
+    assert(first_diff >= 1792u - SPA_SCENE_LATENCY_FRAMES && first_diff < TEST_FRAMES);
+    /* reset with the net: a new generation, the same render again */
+    assert(spa_stereo_upmix_reset(&g_worker_state) == SPA_STEREO_UPMIX_OK);
+    worker_counters_reset();
+    worker_drive(g_overlap, 512, 0, 1);
+    assert(memcmp(g_overlap, g_output_b, sizeof(g_output_b)) == 0);
     spa_scene_mask_worker_stop(&g_worker);
     assert(spa_scene_mask_worker_provider(&g_worker) == NULL);
 
@@ -606,6 +553,49 @@ static void test_scene_mask_worker(void)
     spa_scene_mask_worker_test_control = NULL;
     spa_stereo_upmix_test_scene_mask_observer = NULL;
     g_worker_sleep_ms = 0;
+}
+
+/* The programme gain (SoundCheck) of process_gain_s16 goes in ahead of the
+ * cabin guard: NULL and all-unity are process_s16 exactly, and +6 dB on a
+ * loud wide mix stays inside the J525 buses where scaling the guarded output
+ * afterwards (the old order) does not. */
+static void test_scene_gain_before_guard(void)
+{
+    static struct spa_stereo_upmix state;
+    static float gain[SPA_STEREO_UPMIX_MAX_FRAMES];
+    struct spa_stereo_upmix_config config;
+    size_t frame, i, over = 0;
+    unsigned pass;
+
+    fill_stereo(UINT32_C(0x47414e31), 0);
+    make_scene_config(&config, 1);
+    assert(spa_stereo_upmix_init(&state, &config) == SPA_STEREO_UPMIX_OK);
+    process_blocks(&state, g_input, g_output_a);                   /* unity reference */
+    for (pass = 0; pass < 3; ++pass) {                              /* NULL, unity, +6 dB */
+        for (i = 0; i < SPA_STEREO_UPMIX_MAX_FRAMES; ++i) gain[i] = pass == 2 ? 2.0f : 1.0f;
+        assert(spa_stereo_upmix_init(&state, &config) == SPA_STEREO_UPMIX_OK);
+        for (frame = 0; frame < TEST_FRAMES; frame += SPA_STEREO_UPMIX_MAX_FRAMES)
+            assert(spa_stereo_upmix_process_gain_s16(&state, g_input + frame * 2, SPA_STEREO_UPMIX_MAX_FRAMES,
+                       g_output_b + frame * TEST_CHANNELS, SPA_STEREO_UPMIX_MAX_FRAMES,
+                       pass ? gain : NULL) == SPA_STEREO_UPMIX_OK);
+        if (pass < 2) assert(memcmp(g_output_a, g_output_b, sizeof(g_output_a)) == 0);
+    }
+    assert_cabin_buses_bounded(g_output_b, TEST_FRAMES);
+    for (frame = 0; frame < TEST_FRAMES; ++frame) {                 /* the old order: guard, then gain */
+        const float *m = spa_stereo_upmix_input_matrix();
+        unsigned bus, ch;
+        int bad = 0;
+        for (bus = 0; bus < 8; ++bus) {
+            double v = 0.0;
+            for (ch = 0; ch < 6; ++ch) {
+                double s = 2.0 * g_output_a[frame * TEST_CHANNELS + ch];
+                v += m[ch * 8 + bus] * (s > 32767.0 ? 32767.0 : s < -32768.0 ? -32768.0 : s);
+            }
+            bad |= fabs(v) > 32275.01;
+        }
+        over += (size_t)bad;
+    }
+    assert(over > 0);
 }
 
 /* MMI levels: OFF is the bypass, input SPA_SCENE_LATENCY_FRAMES late; to/from OFF
@@ -697,6 +687,8 @@ int main(void)
     test_scene_backend_smoke();
     test_scene_mask_worker();
     test_scene_levels();
-    puts("stereo_upmix_test: OK (validation, OFF bypass, LFE V2 + cabin guard, SCENE smoke, mask worker, levels)");
+    test_scene_gain_before_guard();
+    puts("stereo_upmix_test: OK (validation, OFF bypass, LFE V2 + cabin guard, SCENE smoke, mask worker, levels, "
+         "gain before the guard)");
     return 0;
 }

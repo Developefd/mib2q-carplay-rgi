@@ -14,10 +14,12 @@ coefficients, spatial controls,74-band map and firmware-derived transform tables
 the level-mask min/max binding bug is fixed. Live state/hardware rounding/cabin
 acoustics remain unverified. Old neutral diagnostic scenarios are preserved.
 
-Practical whole-upmix entry point:
-[C → PCM6 → explicit DSP → paired metrics](<../../docs/audio/UPMIX_CALIBRATION_AND_TUNING.md>).
-`audit_upmix_end_to_end.py` performs fresh C renders; the `_batch.py` companion
-adds isolated parallel track runs and verified aggregation. Runtime scenarios
+Practical whole-upmix entry point: render PCM6 with the hook's own scene
+renderer, then run it through the explicit DSP model
+([below](#run-an-upmix-render-through-the-proven-j525-matrix)). The fresh-render
+runners `audit_upmix_end_to_end.py` and `_batch.py` drove the retired
+`--mode hssr-universal` and were removed on 2026-10-17; their provenance and
+scenario helpers live in `audit_amp_retained_state_grid.py`. Runtime scenarios
 are separate from test fixtures. Positive model peaks are preserved; unknown
 spectral/live controls remain explicit, not a production preset recommendation.
 

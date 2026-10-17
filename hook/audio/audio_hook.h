@@ -77,15 +77,13 @@
  * SceneConfig fields in engine units, unset = the variant J default, read
  * once at start like AUDIO_STEREO_*.  Ranges in stereo_upmix.h.
  * AUDIO_SCENE_MASK_BLOB: the fine mask net's weights (scene_mask.h
- * 'SMSKNET1', port/export_masknet_weights.py), read once at init; unset,
- * unreadable or rejected = spatial only (no instrument transfer, no duck),
- * logged once.  It also steers the LFE V2 assist (bass/drum posteriors).
- * AUDIO_SCENE_MASK_SYNC=1 runs the net on the audio thread (the port tests'
- * exact timing); the default is the scene mask worker (scene_mask_worker.h:
- * SCHED_RR 17, rows one control late, never
- * blocking; a worker that fails to start falls back to the audio thread). */
+ * 'SMSKNET1', port/export_masknet_weights.py), read once at init; the net
+ * runs on the scene mask worker (scene_mask_worker.h: SCHED_RR 17,
+ * rows one control late, never blocking).  It also steers the LFE V2 assist
+ * (bass/drum posteriors).  Unset = spatial only (no instrument transfer, no
+ * duck); set but unreadable, rejected, or a worker that cannot start = no
+ * upmix at all (plain stereo), logged once. */
 #define SPA_AUDIO_SCENE_MASK_BLOB_ENV      "AUDIO_SCENE_MASK_BLOB"      /* path, default none */
-#define SPA_AUDIO_SCENE_MASK_SYNC_ENV      "AUDIO_SCENE_MASK_SYNC"      /* 0/1, default 0 = worker */
 #define SPA_AUDIO_SCENE_ALPHA_ENV          "AUDIO_SCENE_ALPHA"          /* 0..1, default 0.7 */
 #define SPA_AUDIO_SCENE_INST_ALPHA_ENV     "AUDIO_SCENE_INST_ALPHA"     /* 0..1, default 0.9 */
 #define SPA_AUDIO_SCENE_INST_GAMMA_ENV     "AUDIO_SCENE_INST_GAMMA"     /* 0.1..4, default 1 */
