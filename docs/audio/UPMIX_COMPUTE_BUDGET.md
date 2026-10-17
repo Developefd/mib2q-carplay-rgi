@@ -1,5 +1,9 @@
 # Upmix Compute Budget
 
+> **Retired 2026-10-09 with the Universal backend.** The renderer, models and knobs this note describes left the tree; the last tree that has them is git tag `upmix-universal-last-2026-10-09`.
+> What runs now: [Stereo to 5.1 Upmix](STEREO_TO_5_1_UPMIX.md). Why, and with which numbers: [Upmix History and Results](UPMIX_HISTORY_AND_RESULTS_2026-10-09.md), [Upmix Code Retirement](UPMIX_CODE_RETIREMENT_2026-10-09.md).
+> The Krait measurements and the method remain valid; the SCENE renderer's measured cost: [Scene Backend Deploy](../build-and-deploy/SCENE_BACKEND_DEPLOY.md).
+
 *What a candidate upmix model may cost on the head unit's Krait core, how that was measured, and what the training machines could do — the arithmetic that admitted HSSR and blocked CUpGAN, H1 and Q2.*
 
 ---

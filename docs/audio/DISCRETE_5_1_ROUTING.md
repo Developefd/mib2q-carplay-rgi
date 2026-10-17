@@ -6,7 +6,7 @@
 
 ## 🎯 The discrete path in one line
 
-Native decoded APAC 5.1 (from the buffered type-103 path) is reordered byte-identically to `L R C LFE Ls Rs` and **bypasses the upmixer** — it does not touch [HSSR](HSSR_MODEL.md). Discrete 5.1 CarPlay works end to end in the vehicle `[car]` (2026-09-06). The last two faults were both declaration/control mismatches rather than PCM corruption: the SAD header announced two active channels over six populated slots, and the hook blanked `updateFeedback`, removing the sender's clock reference. Both are corrected and vehicle-confirmed.
+Native decoded APAC 5.1 (from the buffered type-103 path) is reordered byte-identically to `L R C LFE Ls Rs` and **bypasses the upmixer** — it does not touch the [stereo upmix](STEREO_TO_5_1_UPMIX.md) and adds no delay. Discrete 5.1 CarPlay works end to end in the vehicle `[car]` (2026-09-06). The last two faults were both declaration/control mismatches rather than PCM corruption: the SAD header announced two active channels over six populated slots, and the hook blanked `updateFeedback`, removing the sender's clock reference. Both are corrected and vehicle-confirmed.
 
 Layer-by-layer reference for the head unit (deva, CSD, LPASS, AFE, MOST) lives in [QNX Audio Topology](QNX_AUDIO_TOPOLOGY.md); the RCC/internal-amp side in [Internal Amp Path](INTERNAL_AMP_PATH.md); the amp in [Virtual Cabin and Amp RE](VIRTUAL_CABIN_AND_AMP_RE.md); where discrete vs upmix splits in [Stereo to 5.1 Upmix](STEREO_TO_5_1_UPMIX.md).
 
@@ -194,7 +194,7 @@ The adopted shipping policy stays **one fixed PCM6 / 48 kHz / S16 stream with `A
 <details>
 <summary>Pre-HSSR stereo renderers recorded in the 5.1 ledger (superseded)</summary>
 
-Before [HSSR](HSSR_MODEL.md) the ledger tracked three renderers behind the same PCM6 adapter; none is selectable now (the current source keeps only HSSR, and `off` = exact `L,R,0,0,0,0`).
+Before [HSSR](HSSR_MODEL.md) the ledger tracked three renderers behind the same PCM6 adapter; none is selectable now (HSSR left with the Universal backend on 2026-10-09; the current source keeps only the SCENE renderer, and `off` = exact `L,R,0,0,0,0`).
 
 - **Universal profile (2026-09-04):** C zero; bounded separated objects to Ls/Rs; fixed Ls/Rs-only +3 dB high shelf, 4 kHz midpoint, before a linked rear limiter; **Cabin-Aware LFE V2** — phase-safe 48 Hz LR4 sub-band, V11 bass/drum steering, Q15 ceiling 4096, paired front trim 0.958; the per-sample limiter accounted for every recovered J525 bus gain including the bank-1 +6 dB surround gain. Pioneer's verified CarPlay stereo→5.0 engine was kept as a host oracle only; its centre is not mapped because bank 1 already derives it. Vehicle policy then: `AUDIO_STEREO_UPMIX=on`, rear 0.25, `AUDIO_STEREO_LFE=assist`.
 - **HQ:** causal 1024-point sqrt-Hann STFT, hop 256, 24 Bark-like bands, confidence-weighted principal-image subtraction, 120 Hz–7 kHz rear mask, unequal Schroeder decorrelation; rear latency 1024 frames / 21.333 ms, fronts and LFE undelayed. State/runtime 59,432/55,304 B, QNX frame 208 B, text/unstripped 8,180/72,904 B; host 1024-frame mean/p99 144,015/162,042 ns; QEMU icount 4,034,828/4,035,856 instructions (not Krait cycles). Final fold rendered very quiet Ls/Rs (peak −40.398/−43.864 dBFS, RMS −68.918/−71.926); on `spatial_aac.wav` HQ Ls/Rs RMS −37.827/−37.436 vs lite −39.803/−40.183. The denormal snap (<1e-20) cost +1.44 % instructions.

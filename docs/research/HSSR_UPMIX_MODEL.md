@@ -1,5 +1,9 @@
 # HSSR — the stereo→5.1 upmix model, end to end
 
+> **Retired 2026-10-09 with the Universal backend.** The renderer, models and knobs this note describes left the tree; the last tree that has them is git tag `upmix-universal-last-2026-10-09`.
+> What runs now: [Stereo to 5.1 Upmix](../audio/STEREO_TO_5_1_UPMIX.md). Why, and with which numbers: [Upmix History and Results](../audio/UPMIX_HISTORY_AND_RESULTS_2026-10-09.md), [Upmix Code Retirement](../audio/UPMIX_CODE_RETIREMENT_2026-10-09.md).
+> The training history and its lessons remain valid; the algorithm now: [Upmix Scene Algorithm](../audio/UPMIX_SCENE_ALGORITHM_2026-10-08.md).
+
 *A long-read on the AI that drives the CarPlay Virtual Cabin upmix: what it is, how it works, every iteration we tried, and what we actually shipped.*
 
 ---

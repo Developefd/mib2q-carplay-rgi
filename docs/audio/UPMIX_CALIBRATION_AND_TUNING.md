@@ -2,7 +2,7 @@
 
 > **Retired 2026-10-09 with the Universal backend.** The renderer, models and knobs this note describes left the tree; the last tree that has them is git tag `upmix-universal-last-2026-10-09`.
 > What runs now: [Stereo to 5.1 Upmix](STEREO_TO_5_1_UPMIX.md). Why, and with which numbers: [Upmix History and Results](UPMIX_HISTORY_AND_RESULTS_2026-10-09.md), [Upmix Code Retirement](UPMIX_CODE_RETIREMENT_2026-10-09.md).
-> The LFE, amp and measurement facts below remain valid.
+> The LFE, amp and measurement facts below remain valid. Code cites (`file:line`) below are to the Universal-era tree of their date, not the current one.
 
 *How every shipped upmix value was reached — the bass complaint, the corrected amp matrix, the 60-second one-lever grid, the Dolby-principle scene bed and the treble taper — plus the offline method to measure the next change. Ledger for 2026-09-07 → 2026-09-22.*
 
@@ -289,7 +289,7 @@ cc -std=gnu99 -O2 -ffp-contract=off -Ihook -Ihook/audio tools/stereo-upmix-rende
 
 The C CLI defaults differ from the car (surround 0.18, LFE off, no guard): always pass every knob. The ARM bench has `--scene` for the car's exported config; the earlier bench measured library defaults, a path the car never runs, and compiled `stereo_upmix.c` without `-mfpu=neon`.
 
-**End-to-end runner** (`tools/soundamp-virtual-cabin/audit_upmix_end_to_end_batch.py`): variant strings are `name:float_or_s16:surround:front_bass_db:lfe_gain_db:retention`; repeat `--input` per track; `--jobs N` runs isolated subprocesses; output directories must be new. The 60 s grid used `--seconds 60 --tail-seconds 4 --input-eq-bank 7 --scenario full_static_nearest_zero_aux --jobs 3 --save-output-wavs`. The seven 60 s 48 kHz cuts live in `/private/tmp/upmix-bank1-audit.BR9uxY/` (769 MB, inputs of every grid); the grid WAVs were deleted on 09-21 to free 17 GB (reports, logs and reviews kept, `WAVS_DELETED.txt` marks each folder).
+**End-to-end runner** (`tools/soundamp-virtual-cabin/audit_upmix_end_to_end_batch.py` with its single-run `audit_upmix_end_to_end.py`; both removed on 2026-10-17 because they drove the retired `--mode hssr-universal`, their provenance and scenario helpers live on in `audit_amp_retained_state_grid.py`, the runners in git history): variant strings are `name:float_or_s16:surround:front_bass_db:lfe_gain_db:retention`; repeat `--input` per track; `--jobs N` runs isolated subprocesses; output directories must be new. The 60 s grid used `--seconds 60 --tail-seconds 4 --input-eq-bank 7 --scenario full_static_nearest_zero_aux --jobs 3 --save-output-wavs`. The seven 60 s 48 kHz cuts live in `/private/tmp/upmix-bank1-audit.BR9uxY/` (769 MB, inputs of every grid); the grid WAVs were deleted on 09-21 to free 17 GB (reports, logs and reviews kept, `WAVS_DELETED.txt` marks each folder).
 
 **Discipline that the history taught:**
 

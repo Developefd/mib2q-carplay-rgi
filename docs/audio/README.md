@@ -33,7 +33,7 @@ flowchart TB
 
 ## 📊 The whole pipeline
 
-Both CarPlay audio streams reach the scene upmix: the buffered type-103 stream for decoded stereo, and the stock realtime type-100 stream for media apps such as Spotify (`AUDIO_REALTIME_UPMIX=on`, `deploy/smartphone_integrator/carplay_startup.sh:103`).
+Both CarPlay audio streams reach the scene upmix: the buffered type-103 stream for decoded stereo, and the stock realtime type-100 stream for media apps such as Spotify (`AUDIO_REALTIME_UPMIX=on`, `deploy/smartphone_integrator/carplay_startup.sh:119`).
 
 ```mermaid
 flowchart TB

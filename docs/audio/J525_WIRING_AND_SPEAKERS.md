@@ -112,6 +112,8 @@ Bus10 is the ten-channel stage after the first mixer, not raw MOST input. Bus10 
 
 Known A-path delays (samples, excluding upmixer and filter group delay): front mid/treble 1786/1789, rear doors 2035, centre mid 1757, centre tweeter 1774, front woofers 1719, sub windings 1836.
 
+These totals already include the 8-bus delays of [SHARC DSP Blocks](SHARC_DSP_BLOCKS.md) (`[1632]×8` plus `[87,87,125,204,403,403,367,367]`): rear doors 2035 = 1632 + 403, front woofers 1719 = 1632 + 87. So the rear doors trail the front mid/treble by 249 samples ≈ **5.2 ms** and the front woofers by 316 ≈ 6.6 ms `[model]`. Do not add the 316-sample bus offset again: an earlier reading did and got 11.8 ms.
+
 Sources: `SHARC_OUTPUT_BINDING_AUDIT`, `SOUNDAMP_FULL_DSP_MODEL`, `SHARC_VISA_3D_OFF_AUDIT`
 
 ## 🔍 Channel-number hypotheses

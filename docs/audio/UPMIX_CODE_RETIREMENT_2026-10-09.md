@@ -1,7 +1,10 @@
 # Upmix Code Retirement Map
 
-> Status 2026-10-09: inventory only. Nothing is deleted. The Universal backend is still the shipping path
-> and stays the fallback until the SCENE backend is accepted in the car (guard histogram, then ears).
+> Status 2026-10-09 morning: inventory only, written while the Universal backend was still the shipping path
+> and the planned fallback until the SCENE backend was accepted in the car (guard histogram, then ears).
+> The plan was executed the same evening (see Executed below: Universal removed, SCENE the only renderer);
+> SCENE was heard in the car later on 10-09 and accepted by the owner on 10-10
+> ([Upmix History and Results](UPMIX_HISTORY_AND_RESULTS_2026-10-09.md)), so the "Not done" row describes 10-09 evening.
 
 ## 🗺️ What the two backends use
 
@@ -14,7 +17,7 @@ flowchart TB
         audio_hook[⚙️ audio_hook.c type-103 render and realtime period]
         stereo_upmix[⚙️ stereo_upmix.c framing, staging, int16 clamp]
         lfe_v2[⚙️ LFE V2 assist]
-        cabin_guard[🔒 Cabin guard and limiter]
+        cabin_guard[🔒 Cabin guard, the limiter went with Universal]
         rt_guard[⚠️ rt_upmix_guard.h 12 ms budget]
     end
 
@@ -157,7 +160,7 @@ second-scene DSP, not the SCENE backend: it goes too.
 
 | Keep | Delete |
 | --- | --- |
-| `AUDIO_STEREO_UPMIX` on/off (on = SCENE), `AUDIO_REALTIME_UPMIX`, `AUDIO_STEREO_LFE`, `AUDIO_STEREO_LFE_GAIN`, the eight `AUDIO_SCENE_*` knobs, `AUDIO_SCENE_MASK_BLOB`, `AUDIO_SCENE_MASK_SYNC` | `AUDIO_HSSR_MODEL`, `AUDIO_STEREO_SURROUND`, `FRONT_BASS_DB`, `FRONT_RETENTION`, `FRONT_TREBLE_DB`, `REAR_AIR_DB`, `AUDIO_HSSR_BED_DELAYS/ATTACK`, `AUDIO_HSSR_VOCAL_GATE`, `AUDIO_HSSR_MASK_MODEL/DRIVE`, `AUDIO_HSSR_GUARD_MODEL`, `AUDIO_SCENE` (SCENE becomes the only renderer) |
+| `AUDIO_STEREO_UPMIX` on/off (on = SCENE), `AUDIO_REALTIME_UPMIX`, `AUDIO_STEREO_LFE`, `AUDIO_STEREO_LFE_GAIN`, the eight `AUDIO_SCENE_*` knobs, `AUDIO_SCENE_MASK_BLOB`, `AUDIO_SCENE_MASK_SYNC` (2026-10-17: the audio-thread path and AUDIO_SCENE_MASK_SYNC are removed; the net runs only on the worker, and a blob that is set but unusable means no upmix) | `AUDIO_HSSR_MODEL`, `AUDIO_STEREO_SURROUND`, `FRONT_BASS_DB`, `FRONT_RETENTION`, `FRONT_TREBLE_DB`, `REAR_AIR_DB`, `AUDIO_HSSR_BED_DELAYS/ATTACK`, `AUDIO_HSSR_VOCAL_GATE`, `AUDIO_HSSR_MASK_MODEL/DRIVE`, `AUDIO_HSSR_GUARD_MODEL`, `AUDIO_SCENE` (SCENE becomes the only renderer) |
 
 ## ✅ Execution plan
 

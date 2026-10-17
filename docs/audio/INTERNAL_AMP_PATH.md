@@ -6,7 +6,7 @@
 
 ## 📋 The answer first
 
-On an internal-amp car there is **no stock six-channel CarPlay route**. MIBRoot picks the stereo pair `eSRC_ENT_AMP_DIO_MEDIA (0x46e) → eSNK_SPEAKERS`, which allocates a 4-byte (2 × 16-bit) MOST source. The MMX still packs six TDM slots and the hook still writes PCM6, so C/LFE/Ls/Rs are simply not transported: expect front L/R only — worse than stock, because the HSSR upmix moves energy out of the fronts `[decompile]`.
+On an internal-amp car there is **no stock six-channel CarPlay route**. MIBRoot picks the stereo pair `eSRC_ENT_AMP_DIO_MEDIA (0x46e) → eSNK_SPEAKERS`, which allocates a 4-byte (2 × 16-bit) MOST source. The MMX still packs six TDM slots and the hook still writes PCM6, so C/LFE/Ls/Rs are simply not transported: expect front L/R only — worse than stock, because the upmix moves energy out of the fronts `[decompile]`.
 
 The policy is therefore `AUDIO_SPATIAL=0` unless the RCC coding byte says external (`02`). The installer implements it: `custom.sh` (`read_amp`, `gate_audio`) reads `modifyE2P r FC 1` and rewrites the installed `carplay_startup.sh` to `AUDIO_SPATIAL=0` unless the byte is `02`; an unreadable byte also gives stereo. The Java UpMix row is left out on `DEVICETYPE_BASIC_2CH/BASIC_4CH/STANDARD_6CH` from the stock `AmplifierListener` `[code]`; the live `modifyE2P` output for one byte has not been seen on a car `[open]`. `AUDIO_STEREO_UPMIX=off` alone is not enough — it still writes PCM6 `L R 0 0 0 0`.
 
@@ -98,13 +98,7 @@ Ranked ways to read it from an MMX shell at CarPlay start:
 | 3 | Java: `DSISound.ATTR_ACTIVEAMPLIFIERCAPABILITIES=35` → full amp id → `/tmp/carplay_amp_type` | the only way to tell Bose apart; boot ordering vs `carplay_startup.sh` unproven |
 | 4 | `on -f rcc sloginfo`, grep for `Amptype from EEPROM` and `speakerCoding =` | trace-scope dependent |
 
-Proposed gate (not in the repo yet):
-
-```sh
-# ponytail: one E2P byte decides the whole policy; fall back to stereo on any doubt
-SS=$(on -f rcc /usr/apps/modifyE2P r fc 1 2>/dev/null | awk '/^0x/{print $2}')
-case "$SS" in 02) export AUDIO_SPATIAL=1 ;; *) export AUDIO_SPATIAL=0 ;; esac
-```
+The gate uses rank 1, once, at install time: `install_MoreIncredibleBash/mod/custom.sh` `read_amp` runs `on -f rcc /usr/apps/modifyE2P r FC 1` (`02` external, `01` internal, anything else unknown) and `gate_audio` rewrites the installed `carplay_startup.sh` to `AUDIO_SPATIAL=0` / `AUDIO_SPATIAL_ATMOS=0` for internal and unknown `[code]`. Recoding the amplifier later needs a reinstall.
 
 Sources: `INTERNAL_AMP_PATH_KNOWLEDGE`, [INTERNAL_AMP_MIBROOT_ROUTING](../sources/INTERNAL_AMP_MIBROOT_ROUTING.md), `MC_SELECTION_AUDIT`
 

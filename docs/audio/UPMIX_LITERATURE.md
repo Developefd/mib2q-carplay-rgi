@@ -1,5 +1,8 @@
 # Upmix Literature
 
+> **Written for the HSSR / Track A–B lines retired on 2026-10-09.** The papers remain valid references; "what it changed" refers to those lines.
+> What runs now: [Stereo to 5.1 Upmix](STEREO_TO_5_1_UPMIX.md); its design and the literature it rests on: [Upmix Scene Algorithm](UPMIX_SCENE_ALGORITHM_2026-10-08.md).
+
 **Latest separator review, 2026-09-29:** [Research review and the next discriminating experiment](archive/UPMIX_RESEARCH_REVIEW_2026-09-29.md) compares 22 research lines and pinned implementation code with Track B's observed fitting gap, failed data/architecture probes, and the Audi compute/latency gates. Its proposed direction is a stronger causal reference encoder followed by measured compression; it establishes no new separation or deployment result.
 
 *The papers and published systems the upmix work drew on — classic direct/ambient DSP, ML upmixers, source separation and its evaluation — with what each one actually changed in this project.*

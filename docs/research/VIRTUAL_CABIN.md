@@ -2,6 +2,8 @@
 
 *A long-read on how the Audi B&O amplifier was reverse-engineered, why getting six discrete channels to it was so hard, and what the "Virtual Cabin" actually is.*
 
+> **History: a long-read of the HSSR era (2026-09).** The upmix it describes (HSSR Universal, its knobs and the shipped-config table) was retired on 2026-10-09; the `path:line` cites are from that tree and have drifted. The amp reading here already uses the corrected matrix orientation, but the current amp hub is [Virtual Cabin and Amp RE](../audio/VIRTUAL_CABIN_AND_AMP_RE.md) with [J525 Wiring and Speakers](../audio/J525_WIRING_AND_SPEAKERS.md); what runs now: [Stereo to 5.1 Upmix](../audio/STEREO_TO_5_1_UPMIX.md).
+
 ---
 
 > **Provenance & honesty.** Claims are tagged inline with the source (`docs/…` notes,
@@ -105,7 +107,8 @@ internal C674x DSP.
 **Why "MMX sends 6×24, the RCC link is 2- or 8-slot" is not a contradiction:** the two
 framings sit on opposite sides of two INICs and the MOST ring. The INICs reframe; the
 only quantity that crosses end-to-end is the MOST synchronous **BlockWidth** (26 bytes
-for the six-channel source) (`docs/audio/INTERNAL_AMP_PATH.md`).
+for the multichannel source, read as `2 + 8×3`; the older `2 + 6×4` reading is superseded)
+(`docs/audio/INTERNAL_AMP_PATH.md`, [QNX Audio Topology](../audio/QNX_AUDIO_TOPOLOGY.md)).
 
 ## 🔗 How audio reaches the amp — the routing decision
 
@@ -119,7 +122,7 @@ MIBRoot resolves a route through a two-table mapper keyed on one byte
 
 | ExternalAmplifierCoded | source | sink | width |
 |---|---|---|---|
-| 1 (external, B&O/Bose) | `eSRC_ENT_AMP_DIO_MEDIA_MC` (0x46f) | `eSNK_DTCP51` (2) | **26 B = 6ch** |
+| 1 (external, B&O/Bose) | `eSRC_ENT_AMP_DIO_MEDIA_MC` (0x46f) | `eSNK_DTCP51` (2) | **26 B** (`2 + 8×3`; carries the six channels) |
 | 0 (internal amp) | `eSRC_ENT_AMP_DIO_MEDIA` (0x46e) | `eSNK_SPEAKERS` (1) | **4 B = stereo** |
 
 There is no channel-count negotiation, no capability check — one byte picks a static
@@ -135,10 +138,11 @@ a **dead alias** — it appears in none of the 143 resource records and zero con
 and `AudioProcess` even maps it back to the same stereo DSI input. So on an internal-amp
 car a PCM6 stream is **front L/R only**. The safe product policy is therefore to gate
 `AUDIO_SPATIAL` on E2P 0xFC (`AUDIO_STEREO_UPMIX=off` alone is not enough — the bypass
-still rides the 6-voice path) (`memory/internal_amp_no_51_path.md`). This unit's startup
-hardcodes `AUDIO_SPATIAL=1` because it is an external-amp car; the E2P gate belongs to
-the installer, not to the startup file
-(`deploy/smartphone_integrator/carplay_startup.sh:56-60`). A real internal 6-channel
+still rides the 6-voice path) (`memory/internal_amp_no_51_path.md`). The startup ships with `AUDIO_SPATIAL=1`; the
+installer implements the E2P gate (`install_MoreIncredibleBash/mod/custom.sh`, `read_amp`
+/ `gate_audio`) and rewrites it to `AUDIO_SPATIAL=0` unless the byte is `02`, and the MMI
+UpMix row is hidden on internal amps (stock `AmplifierListener`, `DEVICETYPE` 1–3); neither
+has run on an internal-amp car yet. A real internal 6-channel
 path is *feasible* but needs RCC-side flashing (MIBRoot 8 bytes + Jacinto DSP
 McASP3/reader/mixer edits) and an internal-amp car to develop against — planned, not
 built (`docs/audio/INTERNAL_AMP_PATH.md`, `docs/audio/INTERNAL_AMP_PATH.md`).
@@ -194,7 +198,8 @@ ADSP/MOST/SHARC/COPP — all of which were found **correct**. The rule that came
 
 The MMX AFE/LPASS packs six 24-bit slots at byte offsets 2,5,8,11,14,17 in a 32-byte
 frame and never clamps to stereo; the COPP does not narrow; the MOST/INIC transport
-carries BlockWidth 26; the amp's V850 accepts `SinkNr 0x26, BlockWidth 26`
+carries BlockWidth 26; the amp's V850 accepts `SinkNr 0x26, BlockWidth 26` (whether the
+connection lands on `0x26` or on the 26-byte 7.1 sink `0x32` is unresolved; either is accepted)
 (`docs/audio/QNX_AUDIO_TOPOLOGY.md`, `docs/audio/QNX_AUDIO_TOPOLOGY.md`,
 `docs/audio/QNX_AUDIO_TOPOLOGY.md`). Every amp-side layer did exactly what it
 was told — consistent with the two width declarations above being the only faults.
@@ -290,19 +295,19 @@ There are **two independent "B" processors**: a spectral **first-B** (74-band, w
 `124DF3`, ~1024-sample / 21.3 ms delay) injected at the first mixer, and a **second-B**
 fed only by aux inputs at the second mixer. Their full binding/config/scheduling is
 documented across [SHARC B Processors](../audio/SHARC_B_PROCESSORS.md) (merged from 16 audits); for the white paper the load-bearing
-facts are: both default to conservative/identity behavior in the shipped banks, and the
-matrix **bank selects a SHARC "mode"** (below).
+facts are: the model defaults both to conservative/identity behavior, but that is a
+hypothesis — static evidence is compatible with an active first B (bank 1 requests library
+mode 5), and C4D17 is not proven off — and the matrix **bank selects a SHARC "mode"** (below).
 
 ### The input matrix — corrected orientation
 
 > **Correction that supersedes older notes:** the matrix orientation was transposed in
-> earlier readings (`docs/audio/VIRTUAL_CABIN_AND_AMP_RE.md:9-29`). The A07 RAM stores
+> earlier readings. The A07 RAM stores
 > **rows = outputs, columns = inputs**; the hook's copy is transposed once so its rows
 > are inputs (`hook/audio/stereo_upmix.c:57-58`). The memory-file per-speaker summaries
 > derived from the old transposed reading ("sub = LFE only", "centre no bass",
-> "woofers sum L/Ls/C/LFE", "fb3 = −3 dB woofers") are **withdrawn**, and so is the
-> table in `docs/audio/VIRTUAL_CABIN_AND_AMP_RE.md:27-36`, which is still the old
-> orientation. Use the matrix below.
+> "woofers sum L/Ls/C/LFE", "fb3 = −3 dB woofers") are **withdrawn**. Use the matrix
+> below (the same as [Virtual Cabin and Amp RE](../audio/VIRTUAL_CABIN_AND_AMP_RE.md)).
 
 The V850 selects a signed-dB 8×8 table from `AD301A07` (profile 0, bank 1 for the
 CarPlay/DTCP51 sink) and writes 64 linear coefficients to the SHARC. **Profile-0 /

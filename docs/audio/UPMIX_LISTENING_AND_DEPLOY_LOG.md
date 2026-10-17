@@ -1,5 +1,9 @@
 # Upmix Listening and Deploy Log
 
+> **Retired 2026-10-09 with the Universal backend.** The renderer, models and knobs this note describes left the tree; the last tree that has them is git tag `upmix-universal-last-2026-10-09`.
+> What runs now: [Stereo to 5.1 Upmix](STEREO_TO_5_1_UPMIX.md). Why, and with which numbers: [Upmix History and Results](UPMIX_HISTORY_AND_RESULTS_2026-10-09.md), [Upmix Code Retirement](UPMIX_CODE_RETIREMENT_2026-10-09.md).
+> The deploy facts (hashes, the jar-restart rule, the live readback) remain valid as history.
+
 *What upmix build ran in the car when, which files and hashes went over, what Luka heard, and what the one live readback proved. Chronology 2026-09-17 → 2026-09-22.*
 
 ---
