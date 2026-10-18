@@ -178,7 +178,7 @@ The type-103 stream is hook-owned, so its lifecycle against stock type 100 had t
 |---|---|---|
 | Phone lock / backgrounding: stock type 100 released `mpl5_dio_ent` while 103 decoded; ring hit 24000 frames, feedback went null, iOS tore 103 down ~8 s later | hand the configured QSA handle to the APAP thread during the gap; reuse the last measured feedback; no second handle | `[car]` 2412 detached writes, no stop |
 | Interruption at lock/unlock traced to QSA close-adjacent flush (`libairplay` `0x47744`/`0x48a94` → close) | suppress only that flush while 103 is active and hand the live handle back | `[car]` one handle through lock/unlock/lock |
-| AAC SETUP answered with APAC's `audioBufferSize` | AAC-only 5,000,000; any offer containing APAC 21,168,000 (`hook/audio/audio_hook.h:153-154`) **[code]** | `[car]` APAC→AAC in place |
+| AAC SETUP answered with APAC's `audioBufferSize` | AAC-only 5,000,000; any offer containing APAC 21,168,000 (`hook/audio/audio_hook.h:154-155`) **[code]** | `[car]` APAC→AAC in place |
 | STOP→prepare→GO at 98 % CPU; writer at QNX priority 10 vs stock 18, 8-fragment queue = 128 ms | receiver/QSA writer `SCHED_RR` 18 (`hook/audio/audio_hook.c:7778-7790`, env `AUDIO_BUFFERED_THREAD_PRIO`) **[code]** | `[car]` 16,384 periods, 0 underruns |
 | Feedback replayed a transient 48080 Hz for ~276 s after a flush storm | 256-write nominal warm-up, then measure 1024 detached 768-frame periods against `CLOCK_MONOTONIC` | deployed, handoff untested |
 | Silent cold start: direct QSA skipped the media-route declaration | call exported `s_audioTypeCallback(kAudioTypeMedia)` before opening, release with the torn-down callback | `[car]` 2026-09-05, 2560 clean periods |

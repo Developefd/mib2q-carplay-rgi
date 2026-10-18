@@ -57,11 +57,12 @@ export AUDIO_SCENE_ALPHA=0.7
 export AUDIO_SCENE_SIDE_LP_HZ=7000
 export AUDIO_SCENE_BLEED_CANCEL=0
 export AUDIO_SCENE_FRONT_KEEP_DB=1
+export AUDIO_SCENE_CENTRE=1
 ```
 
 `AUDIO_STEREO_UPMIX=on` above the block (`:86`) is what selects the renderer; there is no `AUDIO_SCENE` flag any more. The environment is read once when `dio_manager` starts (SI execs `carplay_startup.sh` as the CarPlay child), so an edit on the unit applies at the next child start, in practice the next HU boot. The owner restarts the unit; the tooling never does ([Landmines](../LANDMINES.md)).
 
-The knobs (`hook/audio/audio_hook.h:74-95`), all engine units: nine tuning knobs and the blob path, eight of them in the block (`AUDIO_SCENE_SIGMA_MIN` is not). A value outside its range is refused with an `audio config: invalid …` line and the default used. The first seven values in the block are the engine defaults (`scene_config_defaults()`): removing them changes nothing (`AUDIO_SCENE_FRONT_KEEP_DB` is not: the engine default is 0, off); they exist so the running configuration can be read from the file.
+The knobs (`hook/audio/audio_hook.h:74-96`), all engine units: ten tuning knobs and the blob path, nine of them in the block (`AUDIO_SCENE_SIGMA_MIN` is not). A value outside its range is refused with an `audio config: invalid …` line and the default used. The first seven values in the block are the engine defaults (`scene_config_defaults()`): removing them changes nothing (`AUDIO_SCENE_FRONT_KEEP_DB` is not: the engine default is 0, off; `AUDIO_SCENE_CENTRE=1` is the hook default too); they exist so the running configuration can be read from the file.
 
 | Knob | Value in the block | Range | What it is |
 |---|---|---|---|
@@ -75,6 +76,7 @@ The knobs (`hook/audio/audio_hook.h:74-95`), all engine units: nine tuning knobs
 | `AUDIO_SCENE_SIDE_LP_HZ` | `7000` | 0 = off, 1000..24000 | side-layer low-pass |
 | `AUDIO_SCENE_BLEED_CANCEL` | `0` | 0..0.5 | variant K's bleed cancel (0.355); 0 = J |
 | `AUDIO_SCENE_FRONT_KEEP_DB` | `1` | 0 = off, 0.5..12 (0..0.5 refused) | front anchor: the most all transfers may take from the front over ~1 s ([Stereo to 5.1](../audio/STEREO_TO_5_1_UPMIX.md#front-anchor)) |
+| `AUDIO_SCENE_CENTRE` | `1` | 0..1 | the share of the centred lead vocal that moves from L/R to C (needs the blob); 0 = C silent ([Stereo to 5.1](../audio/STEREO_TO_5_1_UPMIX.md#centre)) |
 | `AUDIO_SCENE_SIGMA_MIN` | not in the block | 0.01..1 | default 0.08; `0.15` is the documented second candidate ([spec section 15](../audio/UPMIX_SCENE_ALGORITHM_2026-10-08.md)) |
 
 What still applies on top of the engine's own levels: `AUDIO_STEREO_LFE=assist` with `AUDIO_STEREO_LFE_GAIN` (LFE V2, steered by the net's bass/drum posteriors when the blob is loaded), the SoundCheck programme gain on type 103, and the J525 cabin guard after it. `AUDIO_REALTIME_UPMIX=on` means the scene renderer also runs on the realtime path, under the guard. The Universal knobs (`AUDIO_STEREO_SURROUND`, `FRONT_BASS_DB`, `FRONT_TREBLE_DB`, `REAR_BODY_DB`, `REAR_AIR_DB`, `FRONT_RETENTION`, every `AUDIO_HSSR_*`) are not parsed any more; a leftover export is ignored.

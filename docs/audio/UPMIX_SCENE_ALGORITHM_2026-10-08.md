@@ -8,7 +8,7 @@
 
 ## 1. Contract
 
-- Input: stereo PCM 48 kHz (type-100 realtime or type-103 AAC stereo). Output: `L R C LFE Ls Rs`; C = 0 (the amp derives it), LFE = the existing V2 assist, unchanged.
+- Input: stereo PCM 48 kHz (type-100 realtime or type-103 AAC stereo). Output: `L R C LFE Ls Rs`; C = 0 (the amp derives it), LFE = the existing V2 assist, unchanged. (Since 2026-10-17 the hook adds a centre stage outside this spec: [Stereo to 5.1, Centre](STEREO_TO_5_1_UPMIX.md#centre).)
 - Rear = a **structural decomposition** of the stereo signal into a coherent primary with a direction and an orthogonal residual, rendered with **static or slow gains**. No classifier decides *whether* a cell goes behind; no slots, holds, owners, latches or attack detectors anywhere in the rear path.
 - The only asymmetry allowed is the safe one: **protection acts within one hop, permission opens slowly**. Every other gain is symmetric and slow.
 - Front = the bit-exact delayed input minus a **transferred** fraction α of the coherent off-centre primary (energy conserved: what leaves the front arrives behind at the same level). The ambient residual and the air copy are never subtracted from the front.

@@ -453,6 +453,7 @@ static void test_scene_mask_worker(void)
     struct spa_scene_mask_worker_stats stats;
     size_t frame, first_diff = TEST_FRAMES;
     unsigned i;
+    int centre_seen = 0;
 
     fill_stereo(UINT32_C(0x574f524b), 0);
     spa_stereo_upmix_default_config(&config);
@@ -498,13 +499,17 @@ static void test_scene_mask_worker(void)
         const int16_t *a = g_output_a + frame * TEST_CHANNELS;
         const int16_t *b = g_output_b + frame * TEST_CHANNELS;
 
-        assert(b[SPA_STEREO_UPMIX_CHANNEL_C] == 0 && b[SPA_STEREO_UPMIX_CHANNEL_LFE] == 0);
+        assert(b[SPA_STEREO_UPMIX_CHANNEL_LFE] == 0);
+        /* the centre (default 1) needs the net's vocal row: silent until the first one lands */
+        if (frame < 1792u - SPA_SCENE_LATENCY_FRAMES) assert(b[SPA_STEREO_UPMIX_CHANNEL_C] == 0);
+        centre_seen |= b[SPA_STEREO_UPMIX_CHANNEL_C] != 0;
         if (first_diff == TEST_FRAMES && memcmp(a, b, TEST_CHANNELS * sizeof(*a)) != 0)
             first_diff = frame;
     }
     /* the first row lands at the fourth boundary (1792 pushed frames), 1024 of
      * latency later in the output: identical before that, different after */
     assert(first_diff >= 1792u - SPA_SCENE_LATENCY_FRAMES && first_diff < TEST_FRAMES);
+    assert(centre_seen);
     /* reset with the net: a new generation, the same render again */
     assert(spa_stereo_upmix_reset(&g_worker_state) == SPA_STEREO_UPMIX_OK);
     worker_counters_reset();

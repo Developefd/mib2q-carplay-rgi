@@ -33,7 +33,7 @@ flowchart TB
 
 ## 📊 The whole pipeline
 
-Both CarPlay audio streams reach the scene upmix: the buffered type-103 stream for decoded stereo, and the stock realtime type-100 stream for media apps such as Spotify (`AUDIO_REALTIME_UPMIX=on`, `deploy/smartphone_integrator/carplay_startup.sh:119`).
+Both CarPlay audio streams reach the scene upmix: the buffered type-103 stream for decoded stereo, and the stock realtime type-100 stream for media apps such as Spotify (`AUDIO_REALTIME_UPMIX=on`, `deploy/smartphone_integrator/carplay_startup.sh:123`).
 
 ```mermaid
 flowchart TB
@@ -49,7 +49,7 @@ flowchart TB
     classify_pcm["classify decoded PCM"]
     discrete_51["discrete 5.1 reorder"]
     scene_upmix["Scene upmix<br/>engine + mask net c"]
-    pcm6_out["PCM6<br/>upmix C zero; discrete C preserved"]
+    pcm6_out["PCM6<br/>upmix C = centred vocal; discrete C preserved"]
   end
   subgraph car_side["Head unit and amp"]
     deva_csd["deva to CSD to LPASS"]

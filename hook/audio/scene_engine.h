@@ -173,6 +173,10 @@ struct scene_state {
     int       in_head, in_count;                  /* ring head sample index (pad space) and fill */
     int       next_frame;                         /* frame t to compute next (covers pad[tH, tH+N)) */
     float     ola[SCENE_RING][4];                 /* subL, subR, rearL, rearR, pad-index space */
+    /* centre (scene_engine_set_vocal): the centred lead vocal leaves L/R for C */
+    float     voc_row[SCENE_MASK_BINS_MAX], e_voc[SCENE_BINS], ola_c[SCENE_RING];
+    float     centre_frac; int have_voc, centre_on;
+    scene_cpx ctrX[SCENE_BINS];
     float     dline[SCENE_DELAY_MAX][2]; int dpos, dlen; int delay_rear, delay_front;
     float     bline[SCENE_DELAY_MAX][2]; int bpos, blen;
     /* scratch for one frame */
@@ -204,6 +208,9 @@ void scene_engine_reset(struct scene_state *s);
  * NULL (prot = 1 - elig when only one is given). mask_bins = 257 (512-point grid) or 1025 (2048). */
 void scene_engine_set_mask(struct scene_state *s, const float *elig, const float *prot, int mask_bins);
 void scene_engine_clear_mask(struct scene_state *s);
+/* Centre: voc[mask_bins] = the net's vocal posterior row (after set_mask, same grid); frac 0..1 = how much
+ * of the centred lead vocal leaves L/R for C (0 = off, C stays silent). Not part of the Python reference. */
+void scene_engine_set_vocal(struct scene_state *s, const float *voc, int mask_bins, float frac);
 
 /* One analysis frame: XL/XR = rfft of the sine-windowed 1024-sample frame t; writes the frame's
  * subL/subR (what leaves the front) and rearL/rearR (Ls/Rs) spectra into the state scratch.
@@ -211,8 +218,9 @@ void scene_engine_clear_mask(struct scene_state *s);
 void scene_engine_frame(struct scene_state *s, const scene_cpx *XL, const scene_cpx *XR, int t);
 
 /* Block driver = SceneStream.push(): in[frames][2] float in [-1,1] -> out[frames][6] (L R C LFE Ls Rs,
- * C and LFE zero). Returns the number of output frames written (the output lags the input by
- * SCENE_NFFT samples plus the delay of the delayed pair; the first call(s) return fewer frames).
+ * LFE zero, C zero unless scene_engine_set_vocal() turned the centre on). Returns the number of output
+ * frames written (the output lags the input by SCENE_NFFT samples plus the delay of the delayed pair;
+ * the first call(s) return fewer frames).
  * frames <= SCENE_MAX_BLOCK. Never allocates, never looks ahead. */
 size_t scene_engine_push(struct scene_state *s, const float *in, size_t frames, float *out, size_t out_capacity);
 

@@ -20,7 +20,7 @@ flowchart TB
         net["Mask net c on its worker thread<br/>eligibility / protect per bin<br/>every 512 frames"]
         rear["Rear Ls/Rs<br/>transferred places + decorrelated side layer<br/>rear delay 0 (variant J)"]
         lfe["LFE V2 assist<br/>60 Hz LR4 from the front,<br/>steered by the net's bass/drums"]
-        centre["C = 0<br/>amp derives centre from L+R"]
+        centre["C = the centred lead vocal<br/>(net vocal x L/R similarity, above ~200 Hz);<br/>the amp derives the rest from L+R"]
         out["Output stage<br/>int16, SoundCheck level,<br/>cabin guard (predicts amp bus peaks)"]
     end
 
@@ -79,7 +79,7 @@ flowchart TB
     discrete_reorder["APAC 5.1 reorder"]
     scene_upmix["scene stereo upmix"]
     cabin_guard["cabin guard S16 peak"]
-    pcm6_out["PCM6<br/>upmix C zero; discrete C preserved"]
+    pcm6_out["PCM6<br/>upmix C = centred vocal; discrete C preserved"]
   end
   subgraph downstream["Head unit and amp"]
     deva_csd["deva asad 0xfc to CSD"]
@@ -112,9 +112,9 @@ There are two CarPlay audio streams (`docs/reference/IOS_CARPLAY_SPATIAL_WIREFOR
 
 The stock realtime stream never carries multichannel, and phone-side spatial over it is blocked by a phone feature flag (`ScreenSpatialAudioReceiver`) — see [Dolby Atmos](DOLBY_ATMOS.md). So all **multichannel** input rides the buffered type-103 path. On that path the frame is APAP (BE32 + ChaCha20-Poly1305); the **inline magic cookie** decides the decoder, not the APAP index hint — see [Discrete 5.1 Routing](DISCRETE_5_1_ROUTING.md).
 
-The shipped startup advertises `[65,23]` on type 103: primary APAC 5.1 because `AUDIO_SPATIAL_ATMOS=0` (`deploy/smartphone_integrator/carplay_startup.sh:84`), plus AAC-LC stereo via `SPATIAL_103_EXTRA_INDEX=23` (`carplay_startup.sh:125`).
+The shipped startup advertises `[65,23]` on type 103: primary APAC 5.1 because `AUDIO_SPATIAL_ATMOS=0` (`deploy/smartphone_integrator/carplay_startup.sh:84`), plus AAC-LC stereo via `SPATIAL_103_EXTRA_INDEX=23` (`carplay_startup.sh:129`).
 
-Stereo on the realtime stream is upmixed too. With `AUDIO_REALTIME_UPMIX=on` (`carplay_startup.sh:119`) the same scene renderer runs on type-100 media PCM — Spotify and every app without type 103 — with its own engine state and its own mask worker (`spa_rt_upmix_start()` in `hook/audio/audio_hook.c`). It falls back to plain L/R while a phone, Siri or alert stream is tracked or while type 103 owns the rail (`hook/audio/media_route.h:158`).
+Stereo on the realtime stream is upmixed too. With `AUDIO_REALTIME_UPMIX=on` (`carplay_startup.sh:123`) the same scene renderer runs on type-100 media PCM — Spotify and every app without type 103 — with its own engine state and its own mask worker (`spa_rt_upmix_start()` in `hook/audio/audio_hook.c`). It falls back to plain L/R while a phone, Siri or alert stream is tracked or while type 103 owns the rail (`hook/audio/media_route.h:158`).
 
 ## 🔧 Where upmix vs discrete kicks in
 
@@ -185,7 +185,7 @@ Read once per `dio_manager` start (a change applies at the next HU boot of the C
 | Knob | Shipped (`carplay_startup.sh`) | Default | Range | What it is |
 |---|---|---|---|---|
 | `AUDIO_STEREO_UPMIX` | `on` (`:86`) | off | on, off | on = the scene renderer; off = the exact `L,R,0,0,0,0` bypass, which always wins |
-| `AUDIO_REALTIME_UPMIX` | `on` (`:119`) | off | on, off | the same renderer on the stock type-100 media stream, own state and own mask worker |
+| `AUDIO_REALTIME_UPMIX` | `on` (`:123`) | off | on, off | the same renderer on the stock type-100 media stream, own state and own mask worker |
 | `AUDIO_STEREO_LFE` | `assist` (`:87`) | off | off, assist | Cabin-Aware LFE V2 |
 | `AUDIO_STEREO_LFE_GAIN` | `0` (`:89`) | 0 | −24..+12 dB re 4096 | assist level; not the whole subwoofer feed (the corrected BANK1 also feeds the sub from L/R/C/Ls/Rs) |
 | `AUDIO_SCENE_MASK_BLOB` | `$H/scene_masknet_c.bin` (`:104`) | unset | path | the fine mask net c weights (`SMSKNET1`, 32,544 B), run on the scene mask worker; unset = spatial only; set but unreadable or rejected = no upmix (plain stereo), logged once |
@@ -198,6 +198,7 @@ Read once per `dio_manager` start (a change applies at the next HU boot of the C
 | `AUDIO_SCENE_SIDE_LP_HZ` | `7000` (`:110`) | 7000 | 0 = off, 1000..24000 | side-layer low-pass |
 | `AUDIO_SCENE_BLEED_CANCEL` | `0` (`:111`) | 0 | 0..0.5 | variant K's cancel of the amp's −3 dB front copy in the rear bus (0.355); 0 = J |
 | `AUDIO_SCENE_FRONT_KEEP_DB` | `1` (`:115`) | 0 (off) | 0 = off, 0.5..12 (0..0.5 refused) | front anchor: the most every transfer together may take from the front over ~1 s (below) |
+| `AUDIO_SCENE_CENTRE` | `1` (`:119`) | 1 | 0..1 | the share of the centred lead vocal that moves from L/R to C (below; needs the blob); 0 = C silent |
 
 What the renderer no longer has: `AUDIO_STEREO_SURROUND`, `FRONT_BASS_DB`, `FRONT_TREBLE_DB`, `REAR_BODY_DB`, `REAR_AIR_DB`, `FRONT_RETENTION` and every `AUDIO_HSSR_*` knob left with the Universal backend; the fronts and rears leave at the engine's own levels (unity scale, as the car kit renders) and only the LFE assist, the SoundCheck gain and the cabin guard apply on top (`hook/audio/stereo_upmix.h:70-77`).
 
@@ -206,6 +207,12 @@ What the renderer no longer has: `AUDIO_STEREO_SURROUND`, `FRONT_BASS_DB`, `FRON
 A sparse mix made only of wide parts (two guitars at the edges and their room, no vocal, bass or drums for the mask to protect) used to go almost whole to the rear: the mask lets every cell go, each transfer is subtracted from the front, and nothing bounded the total. Measured through the hook renderer at the Aggressive level: the intro of a sparse wide song lost 2.8 dB of front with the rear only 3 dB under it; a wide-guitar rock song lost up to 9.8 dB with the rear up to 6.8 dB over the front; dense mixes lose under 1 dB. `[sim]`
 
 `front_keep_db` bounds it (`hook/audio/scene_engine.c`, `front_anchor()`; the same in `scene_upmix.py`). Per frame the engine sums, with a 1 s EMA, the input energy `Ex`, the front subtraction at full transfer `S` (`sub / cold_gain`) as `Es`, and their cross term `Rxs`; the front at anchor gain `a` keeps `Ex − 2a·Rxs + a²·Es`, so the largest `a` that keeps `10^(−keep/10)·Ex` is the smaller root of a quadratic: no feedback through the measurement, nothing to hunt. The gain follows that bound down in 0.3 s and back in 2 s and multiplies `cold_gain`, so every transfer and the ambient layer shrink together and the scene keeps its shape. At 1 dB (shipped): the sparse intro keeps the rear 5.4 dB under the front instead of 3.2, the wide-guitar song 5.6 dB under instead of 0.7, dense mixes are unchanged to 0.1 dB; a centred vocal renders bit-identically with it on (`test_scene_upmix.py` check 14). C against the reference: the anchor gain per frame within 3·10⁻⁷ and the output at −129 dB on the port fixture `stream_anchor.npz` (`port/test_engine.py`), and −74.5 dB through the backend with the net's rows at `--front-keep-db 1` (`port/test_hook_render.py`). `[sim]` Not yet heard in the car.
+
+### Centre
+
+The amp derives a centre from L + R by itself, so the renderer used to leave C at zero. It now feeds C with the one thing a centre speaker is for: the lead vocal, which in a car otherwise collapses toward the nearer door for both front seats (`centre_vocal()` in `hook/audio/scene_engine.c`, `scene_engine_set_vocal()`). Per bin, after the rear transfers and the front anchor: `w = AUDIO_SCENE_CENTRE · v · smoothstep(ψ, 0.6, 0.9) · smoothstep(f, 150, 250 Hz)`, with `v` the net's vocal posterior (output 0, the same row as the masks, 30 ms attack / 300 ms release) and `ψ = 2·Re(L·R*) / (|L|² + |R|²)` on the 43 ms statistics (1 = centred and coherent, 0 for one-sided or uncorrelated content). L and R each lose `w·M` (`M` = the mid of what is left in front), C gets `sqrt(2w(2 − w))·M`, so a centred source keeps its power: at 1 it leaves L/R completely, at 0.5 L/R drop 6 dB. Panned parts, ambience and everything under ~200 Hz stay where they were, and the rears are untouched. Without the blob there is no vocal row and C stays exactly 0; the Off level fades C out with the rest of the scene. On album01 through the hook renderer at 1: L/R −0.7 dB, C at −26 dB, front power (L + R + C) −0.05 dB, no clipped sample. `[sim]` The stage is not in `scene_upmix.py`: every reference comparison renders with `--centre 0`, and `tests/scene_centre_test.c` covers it (off silent, power kept, half share, a hard-left tone stays). `[code]`
+
+In the car (owner, 2026-10-17, 10 s on/off A/B at 1): "not a huge difference, but the centre no longer feels empty". Not proven yet: that the amp plays C discretely rather than folding it into L/R in its first B stage ([SHARC B processors](SHARC_B_PROCESSORS.md)). `[car]`
 
 ### MMI level
 

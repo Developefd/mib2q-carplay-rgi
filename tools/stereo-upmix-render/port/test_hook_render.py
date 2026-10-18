@@ -15,7 +15,8 @@ against scene_upmix.py (same defaults, no mask) on the car-kit source album01.wa
   3. the output must not depend on the call size: --block 1024 and --block 100 (not a hop multiple, the
      FIFO bound's worst case) bit-identical to --block 768;
   4. --lfe assist: LFE non-zero, fronts = 31392/32768 x the reference (the assist's paired headroom).
-  5. the mask net: --mask-blob (the SMSKNET1 blob exported from the fixtures' masknet_oracle.npz, or
+  5. the mask net (every mask render runs with --centre 0: the vocal-to-centre stage is not in the Python
+     reference; tests/scene_centre_test.c covers it): --mask-blob (the SMSKNET1 blob exported from the fixtures' masknet_oracle.npz, or
      --blob PATH; the renderer runs it on the mask worker stepped inside submit, the unit's timing) with
      --mask-rows dumping the rows the backend installed at every 512-frame control
      boundary (256, 768, 1280, ... pushed frames; the renderer checks that cadence); scene_upmix.py driven
@@ -195,7 +196,7 @@ def mask_section(a, binary, tmp, x, n, hook_nomask):
         return
     rows_path = os.path.join(tmp, "rows.f32")
     hook = render(binary, a.wav, os.path.join(tmp, "hook_mask.wav"), "--block", "768",
-                  "--mask-blob", blob, "--mask-rows", rows_path) / 32768.0
+                  "--mask-blob", blob, "--centre", "0", "--mask-rows", rows_path) / 32768.0
     rows = np.fromfile(rows_path, np.float32).reshape(-1, 2, MASK_BINS).astype(np.float64)
     boundaries = (n - MASK_PREFILL) // MASK_HOP + 1
     check(rows.shape[0] == boundaries, "renderer wrote one record per control boundary (%d, cadence checked by it)"
@@ -227,9 +228,9 @@ def mask_section(a, binary, tmp, x, n, hook_nomask):
           "mask: hook vs stream_render on the same rows after the latency, guard frames aside: %.1f dB overall, "
           "worst channel %.1f dB (limit %.0f; bare engine %.1f dB)"
           % (overall, worst, TOL_DB, db((eng - r)[:, [0, 1, 4, 5]], r[:, [0, 1, 4, 5]])))
-    other = render(binary, a.wav, os.path.join(tmp, "hook_mask100.wav"), "--block", "100", "--mask-blob", blob) / 32768.0
+    other = render(binary, a.wav, os.path.join(tmp, "hook_mask100.wav"), "--block", "100", "--mask-blob", blob, "--centre", "0") / 32768.0
     check(np.array_equal(other, hook), "mask: --block 100 bit-identical to --block 768")
-    lfe = render(binary, a.wav, os.path.join(tmp, "hook_mask_lfe.wav"), "--lfe", "assist", "--mask-blob", blob) / 32768.0
+    lfe = render(binary, a.wav, os.path.join(tmp, "hook_mask_lfe.wav"), "--lfe", "assist", "--mask-blob", blob, "--centre", "0") / 32768.0
     check(np.abs(lfe[:, 3]).max() > 0.0 and not lfe[:, 2].any(), "mask + --lfe assist writes LFE, C stays zero")
     lf = lfe[LATENCY:n]
     guard_lfe = np.abs(np.rint(lf[:, :2] * 32768.0) - np.rint(np.rint(eng[:, :2] * 32768.0) * FRONT_Q15 / 32768.0)).max(1) > 1
@@ -241,7 +242,7 @@ def mask_section(a, binary, tmp, x, n, hook_nomask):
     check(np.all(guard[moved] | guard_lfe[moved]) and len(moved) < 1e-3 * n,
           "mask + --lfe assist moves Ls/Rs only where a guard binds (%d frames)" % len(moved))
     # the shipped front anchor; the rows depend on the input alone, so they are the same
-    anc = render(binary, a.wav, os.path.join(tmp, "hook_anchor.wav"), "--mask-blob", blob, "--front-keep-db", "1") / 32768.0
+    anc = render(binary, a.wav, os.path.join(tmp, "hook_anchor.wav"), "--mask-blob", blob, "--centre", "0", "--front-keep-db", "1") / 32768.0
     ha = anc[LATENCY:n]
     ea = c_engine(LIB, x, rows=rows.astype(np.float32), front_keep_db=1.0)[:n - LATENCY]
     ka = ~guard_frames(LIB, np.rint(ha * 32768.0).astype(np.int16), ea, 0)

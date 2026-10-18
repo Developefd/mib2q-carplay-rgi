@@ -110,6 +110,9 @@ struct spa_stereo_upmix_config {
     /* SCENE: the starting level (enum spa_upmix_level, below), NORMAL by default;
      * spa_stereo_upmix_set_level() changes it on the running state. */
     int level;
+    /* SCENE: how much of the centred lead vocal moves from L/R to C (0..1, 0 =
+     * C silent); needs the mask provider (the vocal posterior).  Default 1. */
+    float scene_centre;
 };
 
 /* Runtime details are public only so callers can embed the complete state and
@@ -214,7 +217,8 @@ void spa_stereo_upmix_config_set_lfe(
  * alpha 0..1 (transfer fraction), inst_alpha 0..1, inst_gamma 0.1..4,
  * duck_depth 0..1, rear_delay_ms -50..50 (signed: < 0 delays the front),
  * sigma_min 0.01..1, side_lp_hz 0 (off) or 1000..24000, bleed_cancel 0..0.5,
- * front_keep_db 0 (off) or 0.5..12 (the most the transfers may take from the front). */
+ * front_keep_db 0 (off) or 0.5..12 (the most the transfers may take from the front),
+ * centre 0..1 (the share of the centred lead vocal that moves to C). */
 void spa_stereo_upmix_config_set_scene_alpha(struct spa_stereo_upmix_config *config, float value);
 void spa_stereo_upmix_config_set_scene_inst_alpha(struct spa_stereo_upmix_config *config, float value);
 void spa_stereo_upmix_config_set_scene_inst_gamma(struct spa_stereo_upmix_config *config, float value);
@@ -224,6 +228,7 @@ void spa_stereo_upmix_config_set_scene_sigma_min(struct spa_stereo_upmix_config 
 void spa_stereo_upmix_config_set_scene_side_lp_hz(struct spa_stereo_upmix_config *config, float value);
 void spa_stereo_upmix_config_set_scene_bleed_cancel(struct spa_stereo_upmix_config *config, float value);
 void spa_stereo_upmix_config_set_scene_front_keep_db(struct spa_stereo_upmix_config *config, float value);
+void spa_stereo_upmix_config_set_scene_centre(struct spa_stereo_upmix_config *config, float value);
 
 /* SCENE only: install the mask row of the control period that starts now
  * (scene_engine_set_mask: elig/prot[bins] in 0..1, bins 257 or 1025, either

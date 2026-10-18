@@ -385,6 +385,8 @@ void spa_stereo_upmix_config_set_scene_bleed_cancel(struct spa_stereo_upmix_conf
 { if (config) config->scene.bleed_cancel = spa_upmix_clampf(value, 0.0f, 0.5f); }
 void spa_stereo_upmix_config_set_scene_front_keep_db(struct spa_stereo_upmix_config *config, float value)
 { if (config) config->scene.front_keep_db = value > 0.0f ? spa_upmix_clampf(value, 0.5f, 12.0f) : 0.0f; }
+void spa_stereo_upmix_config_set_scene_centre(struct spa_stereo_upmix_config *config, float value)
+{ if (config) config->scene_centre = spa_upmix_clampf(value, 0.0f, 1.0f); }
 
 void spa_stereo_upmix_config_set_scene_mask_provider(struct spa_stereo_upmix_config *config,
                                                      const struct spa_scene_mask_provider *provider)
@@ -407,8 +409,10 @@ static int spa_scene_config_valid(const struct spa_stereo_upmix_config *config)
     spa_stereo_upmix_config_set_scene_side_lp_hz(&probe, probe.scene.side_lp_hz);
     spa_stereo_upmix_config_set_scene_bleed_cancel(&probe, probe.scene.bleed_cancel);
     spa_stereo_upmix_config_set_scene_front_keep_db(&probe, probe.scene.front_keep_db);
+    spa_stereo_upmix_config_set_scene_centre(&probe, probe.scene_centre);
     return config->scene.n_fft == SCENE_NFFT && config->scene.hop == SCENE_HOP &&
-           memcmp(&probe.scene, &config->scene, sizeof(probe.scene)) == 0;
+           memcmp(&probe.scene, &config->scene, sizeof(probe.scene)) == 0 &&
+           probe.scene_centre == config->scene_centre;
 }
 
 static int spa_upmix_config_valid(const struct spa_stereo_upmix_config *config)
@@ -463,6 +467,7 @@ void spa_stereo_upmix_default_config(struct spa_stereo_upmix_config *config)
     scene_config_defaults(&config->scene);
     config->scene_mask_provider = NULL;
     config->level = SPA_UPMIX_LEVEL_NORMAL;
+    config->scene_centre = 1.0f;
 }
 
 void spa_stereo_upmix_config_set_lfe(
@@ -717,7 +722,11 @@ static void spa_scene_mask_boundary(struct spa_stereo_upmix *state,
     /* refused when the worker is behind: these frames are skipped, never waited for */
     (void)provider->submit(provider->context, rt->_scene_mask_generation,
                            rt->_scene_mask_sequence, rt->_scene_mask_acc);
-    if (*elig) scene_engine_set_mask(&rt->_scene, *elig, *prot, SMASK_BINS);
+    if (*elig) {
+        scene_engine_set_mask(&rt->_scene, *elig, *prot, SMASK_BINS);
+        scene_engine_set_vocal(&rt->_scene, rt->_scene_mask_row.voc, SMASK_BINS,
+                               state->config.scene_centre);
+    }
 }
 
 /* SCENE: staged int16 stereo -> float -> engine -> FIFO (primed with the
@@ -779,7 +788,7 @@ static void spa_scene_process(struct spa_stereo_upmix *state, size_t frames,
         int16_t *output = pcm6 + frame * channels;
         int16_t *dry = rt->_dry_ring + rt->_dry_pos * SPA_STEREO_UPMIX_INPUT_CHANNELS;
         const int16_t dry_l = dry[0], dry_r = dry[1];
-        int16_t render_l = 0, render_r = 0, rear_l = 0, rear_r = 0, lfe = 0;
+        int16_t render_l = 0, render_r = 0, render_c = 0, rear_l = 0, rear_r = 0, lfe = 0;
         float w, g;
 
         /* the input SPA_SCENE_LATENCY_FRAMES ago: aligned with this output frame */
@@ -789,6 +798,7 @@ static void spa_scene_process(struct spa_stereo_upmix *state, size_t frames,
         if (frame < pop) {
             render_l = spa_upmix_float_to_s16(in[0] * 32768.0f);
             render_r = spa_upmix_float_to_s16(in[1] * 32768.0f);
+            render_c = spa_upmix_float_to_s16(in[2] * 32768.0f);
             rear_l = spa_upmix_float_to_s16(in[4] * 32768.0f);
             rear_r = spa_upmix_float_to_s16(in[5] * 32768.0f);
         }
@@ -803,7 +813,8 @@ static void spa_scene_process(struct spa_stereo_upmix *state, size_t frames,
             spa_upmix_scale_s16_q15(render_l, state->config.front_gain_q15);
         output[SPA_STEREO_UPMIX_CHANNEL_R] =
             spa_upmix_scale_s16_q15(render_r, state->config.front_gain_q15);
-        output[SPA_STEREO_UPMIX_CHANNEL_C] = 0;
+        output[SPA_STEREO_UPMIX_CHANNEL_C] =
+            spa_upmix_scale_s16_q15(render_c, state->config.front_gain_q15);
         output[SPA_STEREO_UPMIX_CHANNEL_LFE] = lfe;
         output[SPA_STEREO_UPMIX_CHANNEL_LS] = rear_l;
         output[SPA_STEREO_UPMIX_CHANNEL_RS] = rear_r;
@@ -819,6 +830,8 @@ static void spa_scene_process(struct spa_stereo_upmix *state, size_t frames,
                 g * (float)output[SPA_STEREO_UPMIX_CHANNEL_L] + (1.0f - g) * (float)dry_l);
             output[SPA_STEREO_UPMIX_CHANNEL_R] = spa_upmix_float_to_s16(
                 g * (float)output[SPA_STEREO_UPMIX_CHANNEL_R] + (1.0f - g) * (float)dry_r);
+            output[SPA_STEREO_UPMIX_CHANNEL_C] = spa_upmix_float_to_s16(
+                g * (float)output[SPA_STEREO_UPMIX_CHANNEL_C]);
             output[SPA_STEREO_UPMIX_CHANNEL_LFE] = spa_upmix_float_to_s16(g * (float)lfe);
             output[SPA_STEREO_UPMIX_CHANNEL_LS] = spa_upmix_float_to_s16(g * (float)rear_l);
             output[SPA_STEREO_UPMIX_CHANNEL_RS] = spa_upmix_float_to_s16(g * (float)rear_r);

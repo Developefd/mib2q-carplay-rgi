@@ -113,6 +113,10 @@ export AUDIO_SCENE_BLEED_CANCEL=0
 # sparse mix of only wide parts (no vocal, bass or drums for the mask to protect) went almost whole to
 # the rear; dense mixes take < 1 dB and are untouched.  0 = off.
 export AUDIO_SCENE_FRONT_KEEP_DB=1
+# Centre: the share of the centred lead vocal (the mask net's vocal output) that moves from L/R to the
+# centre channel, power kept (the amp's own L+R centre then carries correspondingly less of it).
+# 0 = C silent as before.  Liked by ear in the car 2026-10-17 at 1.
+export AUDIO_SCENE_CENTRE=1
 # The scene upmix also for the stock realtime media stream (type 100, audioType=media: Spotify and
 # every app without buffered type 103). Own DSP state and controller; plain L/R while a
 # phone/Siri/alert stream is tracked or while type 103 owns the rail. off = zero rears as before.
