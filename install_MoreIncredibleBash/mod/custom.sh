@@ -451,19 +451,20 @@ patch_lang() {
 # its stock SI.  It always patches the stock copy (.carplay-stock once it exists).
 SI_BIN=/mnt/app/eso/bin/apps/smartphone_integrator
 patch_si() {
-    find_mp || { echo "  WARN no M.I.B. micropython - smartphone_integrator stays stock (no USB error re-arm)"; return 0; }
+    find_mp || { echo "  smartphone_integrator left stock (the USB reconnect fix needs M.I.B. micropython)"; return 0; }
     [ -f "$SI_BIN" ] || { echo "  WARN no $SI_BIN"; return 0; }
     src=$SI_BIN; [ -f "$SI_BIN.carplay-stock" ] && src=$SI_BIN.carplay-stock
     rm -f "$SI_BIN.carplay-new"
     # the SI is read whole (0.8 MB): default micropython heaps are smaller (MemoryError on the unit)
-    "$mp" -X heapsize=8M "$RES/binpatch.py" smartphone_integrator "$src" "$SI_BIN.carplay-new"; rc=$?
+    # binpatch's own messages are for a manual run; the lines below say the same in plain words
+    "$mp" -X heapsize=8M "$RES/binpatch.py" smartphone_integrator "$src" "$SI_BIN.carplay-new" > /dev/null; rc=$?
     case $rc in
         0) backup_once "$SI_BIN" "$SI_BIN.carplay-stock" || { rm -f "$SI_BIN.carplay-new"; return 1; }
            chmod 755 "$SI_BIN.carplay-new" && mv -f "$SI_BIN.carplay-new" "$SI_BIN" ||
                { rm -f "$SI_BIN.carplay-new"; echo "FAILED activate $SI_BIN"; return 1; }
-           echo "  $SI_BIN (USB error re-arm patched in)" ;;
-        3) echo "  $SI_BIN already carries the USB error re-arm" ;;
-        *) rm -f "$SI_BIN.carplay-new"; echo "  WARN smartphone_integrator stays stock (no USB error re-arm)" ;;
+           echo "  $SI_BIN (USB reconnect fix added)" ;;
+        3) echo "  $SI_BIN already has the USB reconnect fix" ;;
+        *) rm -f "$SI_BIN.carplay-new"; echo "  smartphone_integrator left stock (no USB reconnect fix for this firmware)" ;;
     esac
     return 0
 }
