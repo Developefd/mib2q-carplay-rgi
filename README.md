@@ -14,6 +14,14 @@ _CarPlay for the Audi MHI2Q head unit: the map and route guidance in the Virtual
 > Already stuck on the logo? Follow the
 > [recovery guide](https://github.com/luka-dev/mib2q-carplay-rgi/issues/24#issuecomment-5849641990).
 
+> [!WARNING]
+> **Remove any other CarPlay cluster / AltScreen mod before installing** (MIBSI, the CarPlay AltScreen
+> toolbox, mibr and similar), with its own uninstaller or by reflashing the stock firmware. Only one mod
+> can own the cluster: another one takes the cluster video and rewrites the CarPlay configuration, so you
+> get only the loading logo on the cluster or CarPlay does not connect at all. Its leftovers break this
+> patch the same way ([#39](https://github.com/luka-dev/mib2q-carplay-rgi/issues/39),
+> [#53](https://github.com/luka-dev/mib2q-carplay-rgi/issues/53)).
+
 ---
 
 Production implementation for Audi MHI2Q (MU1316, QNX 6.5 ARMv7):
