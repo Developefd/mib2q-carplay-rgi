@@ -108,23 +108,6 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
      * closes that window from t0. */
     public static boolean isConnected() { return platformSupported && (connected || videoAvailable); }
 
-    /** Presentation truth, distinct from session intent: both the applied
-     * CarPlay composition and its current renderer surface must be ready. */
-    public static boolean isClusterPresented() {
-        synchronized (LOCK) {
-            return rendererReady && isConnected()
-                && (currentCtx == CTX_CLUSTER || currentCtx == CTX_CLUSTER_MAP);
-        }
-    }
-
-    private static void refreshNavOperationState() {
-        try {
-            de.audi.app.combi.bap.app.navi.InitializationManagerNavi.refreshCarPlayPresentation();
-        } catch (Throwable t) {
-            Log.w(TAG, "NAVSD presentation refresh failed: " + t);
-        }
-    }
-
     /** DisplayManagerMIB2High uses this to distinguish our serialized 72/80/81/74
      * writes from stock screen-controller requests while CarPlay owns terminal 1. */
     public static boolean isClusterContextWriterThread() {
@@ -155,7 +138,7 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
      * The native control loop starts only after av_sink_open posts that frame.
      * Keep the existing context until then, rather than selecting an empty 99
      * during cold Screen/EGL initialization. Guarded by LOCK. */
-    private static volatile boolean rendererReady;
+    private static boolean rendererReady;
     private static volatile boolean navActive = false;
     private static boolean navHidePending;
     private static volatile boolean acceptVideoFallback = false;
@@ -325,11 +308,6 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
             LOCK.notifyAll();
         }
         Log.i(TAG, "rgi send active=" + rgi + " reason=republish queued=" + rgiQueued);
-        /* Stock Navigation can publish NAVSD INITIALIZING while its map is loading.
-         * That state masks the independent CarPlay cluster plane, so keep it gated
-         * for exactly the same lifetime as our physical context ownership. */
-        refreshNavOperationState();
-        AltScreenNavStatusGate.setAltScreenActive(ownCluster);
     }
 
     /** Mirror the confirmed RGI presentation to the hook, which selects the Maps cluster URL
@@ -366,7 +344,6 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
             rendererReady = ready;
             LOCK.notifyAll();
         }
-        refreshNavOperationState();
         Log.i(TAG, "rendererReady=" + ready);
     }
 
@@ -446,10 +423,6 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
             desiredCtx = CTX_CLUSTER_MAP;
             sendRgiStateLocked();   /* navActive is false here: reset the hook's URL state */
         }
-        /* Do not wait for the stock Navigation service.  Publish ownership now;
-         * prepareCombiBAPService() applies it synchronously if the service arrives later. */
-        refreshNavOperationState();
-        AltScreenNavStatusGate.setAltScreenActive(true);
         synchronized (LOCK) {
             /* Create the single persistent worker once; recreate only if it never started or died.
              * Assign the field ONLY after start() succeeds so a throw leaves worker==null for retry. */
@@ -643,8 +616,6 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
             /* Throttle the retry: the bounce write and the stock path have no settle sleep, so a
              * persistently-throwing switchContext would otherwise hot-spin (busy loop + log flood). */
             try { Thread.sleep(BOUNCE_SLEEP_MS); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
-        } finally {
-            refreshNavOperationState();
         }
     }
 }

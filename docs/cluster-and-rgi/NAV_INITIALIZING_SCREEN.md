@@ -1,6 +1,6 @@
 # Nav Initializing Screen
 
-*Why the Virtual Cockpit still shows "Initialising navigation system. Please wait..." over the CarPlay cluster map, what really drives it on both sides, why the September 16 fix (`7d35b53`) does not stop it, and the fix that should. Status: **new host-verified candidate, not deployed** (2026-10-18). A clamp in a patched `InitializationManagerNavi` was built on 2026-09-23 (`b4a661a`), did not remove the screen on the car, and was removed on 2026-09-24; the analysis and the decisions stay here for the next attempt. The analysis is static, of the VC `hmi_app.elf` (A5 2018, `AU491_0379`) and the HU stock Java (`Tools/jxe2jar/out/MU1316-vf/`).*
+*Why the Virtual Cockpit still shows "Initialising navigation system. Please wait..." over the CarPlay cluster map, what really drives it on both sides, why the September 16 fix (`7d35b53`) does not stop it, and the fix that should. Status (2026-10-19): **no workaround is in the tree.** The 2026-10-18 candidate (`1bad426`) did not clear the text on the owner's cold-boot test and was reverted; the September 16 show/hide deferral (`7d35b53`) was removed with it, so the hook no longer touches NAVSD INITIALIZING. Why: [2026-10-19: why nothing is patched](#-2026-10-19-why-nothing-is-patched). The [2026-10-18 deep dive](#-2026-10-18-deep-dive-jar-binding-the-readiness-chain-and-why-the-candidate-was-blind) is kept for the jar-binding analysis and the readiness chain. A clamp in a patched `InitializationManagerNavi` was built on 2026-09-23 (`b4a661a`), did not remove the screen on the car, and was removed on 2026-09-24. The analysis is static, of the VC `hmi_app.elf` (A5 2018, `AU491_0379`), the HU stock Java (`Tools/jxe2jar/out/MU1316-vf/`), `navStartup`/`servicemgrmibhigh`, and the HU startup configs.*
 
 ---
 
@@ -13,7 +13,16 @@
 | What is *not* the cause | NavSD **InfoStates** (FctID 38). It drives a separate hint-text popup and the "navigation on mobile device" screen (which the KSS firmware makes unreachable on this VC), not this text. |
 | Why the HU sends INITIALIZING | `AbstractBAPModuleInitializationManagerFSG.getGeneralOperationState()` returns INITIALIZING when the "Navi" app has not started (`appState == 0`), when the BAP init sequence is still running (`initState < 9`), during a software download, when `appIsReady` is false, or when the BAP stack is down. |
 | Why `7d35b53` fails | It only intercepts `showInitializingScreen()` / `hideInitializingScreen()`, which toggle `appIsReady`. The other four inputs still send INITIALIZING, from a manager that runs before and beside our wrapper. |
-| Fix | October 18 candidate overrides INITIALIZING only for an applied CarPlay composition with a ready renderer; preserves native initialization semantics. Host-verified, not deployed. The broader September clamp remains historical. |
+| Fix | October 18 candidate overrides INITIALIZING only for an applied CarPlay composition with a ready renderer; preserves native initialization semantics. Deployed and ineffective on the 2026-10-18 cold boot — the test was blind (see the deep dive below); the next candidate adds hook-file logging and a binding-independent stock-instance fallback. |
+
+## ⏸️ 2026-10-19: why nothing is patched
+
+On the owner's car CarPlay is up 10–15 s after power-on, stock Navigation reports ready at about 26 s (the native `0x704` run mode, [Stock Nav Readiness](STOCK_NAV_READINESS.md)), and the VC shows the NA screen in between. NAVSD has **two** barriers in that window, and an OP_State override can only pass the second:
+
+1. **The NAVSD BAP module is OFF until Java Navigation registers its listener.** `AbstractNavigationActivator.start()` registers `CombiBAPServiceNaviListener` (`AbstractNavigationActivator.java:424-429`); `ServiceManagerNavi` hands it to `AppConnectorNavi.setAppServiceListener()`, which calls `notifyAppServiceChanged(true)` (`AppConnectorNavi.java:63-66`). Until then `updateHMIState()` keeps hmiState 0 (`AbstractBAPModuleInitializationManager.java:175-210`), and the BAP init sequence (initState 2 → 9) starts only after the VC acknowledges hmiState 1 (`notifyHMIStateAcknowledged`). `[decompile]`
+2. **OP_State NORMAL needs the "Navi" app state 1**, i.e. the native readiness report. `[decompile]`
+
+Every cluster BAP module has its own app-service gate: AudioSD follows `AppConnectorMedia` / `AppConnectorTuner`, Phone follows `AppConnectorPhone`. That is why CarPlay music reaches the VC long before NAVSD is up. A fix inside the window would have to give NAVSD an app-service listener of our own while CarPlay owns the cluster and hand it back to stock Navigation later; it was not attempted. `[decompile]`
 
 ## 🔍 October 18 comparison and candidate
 
@@ -104,6 +113,207 @@ ignored `build/cluster-startup-*.log`; the review snapshot is
 [^nav_monitor]: [kamgurgul renderer monitor at the compared revision](https://github.com/kamgurgul/mib2q-carplay/blob/1c3e07528b59bb424ff45b7d14ed7f44bd687efb/deploy/smartphone_integrator/carplay_monitor.sh).
 [^up_alt]: [kamgurgul AltScreen heartbeat at the compared revision](https://github.com/kamgurgul/mib2q-carplay/blob/1c3e07528b59bb424ff45b7d14ed7f44bd687efb/java_patch/com/luka/carplay/core/AltScreenModule.java).
 [^up_gate]: [kamgurgul NavSD gate at the compared revision](https://github.com/kamgurgul/mib2q-carplay/blob/1c3e07528b59bb424ff45b7d14ed7f44bd687efb/java_patch/com/luka/carplay/core/ScreenNavStatusGate.java).
+
+## 🔬 2026-10-18 deep dive: jar binding, the readiness chain, and why the candidate was blind
+
+The owner's cold-boot test of `1bad426` (CarPlay up on the HU, music playing, VC still on
+"Initialising navigation") produced no diagnostics, so the test cannot distinguish "our class never
+ran" from "our override gate was false". This section answers three things statically: how
+`carplay_hook.jar` is loaded relative to the ROM classes in `lsd.jxe`, the full native→Java readiness
+chain with addresses, and a ranked fix whose next boot is conclusive on its own. The HU was offline
+during this research; every `[car]` claim is inherited from earlier sections of this document and the
+repo history.
+
+### Does the car run our `InitializationManagerNavi`? (Q1)
+
+**Launch mechanics.** `lsd.sh` finds every jar under `$BASE_DIR/lsd/jars/` and appends it to
+`BOOTCLASSPATH` (`lsd.sh:392-399`), appends `lsd.jxe` **last** (`lsd.sh:432`), and launches
+`$J9 $VMOPTIONS -Xbootclasspath:$BOOTCLASSPATH -jxe:$LSD_JXE` (`lsd.sh:434`). So on the boot class
+path the order is `carplay_hook.jar : … : lsd.jxe`. The JVM runs with `-Xquickstart`, microJIT and
+`-noverify` (`lsd.sh:45-47`). `[code]`
+
+**JXE format.** `lsd.jxe` is a ZIP whose first member `rom.classes` is a J9 ROM image (magic `J99J`).
+ROM classes store JVM-standard bytecode (J9-private opcodes aside); class references are
+constant-pool entries resolved through the class loader at run time — there is no build-time
+interning of cross-class references that could bypass the boot loader (see `Tools/jxe2jar/README.md`,
+"The J9 opcode space" and the `new`-site recovery, which reads exactly those CP class refs).
+`[code]` `[doc]`
+
+**Empirical anchor.** Whole-class stock replacements in the same package tree demonstrably work on
+this car: `AppConnectorTerminalMode` is constructed by the ROM class
+`CombiModuleAudio` (`CombiModuleAudio.java:91`) and `ServiceManagerPhone` by the ROM class
+`CombiModulePhone` (`CombiModulePhone.java:91`). `[decompile]` `[car]` The navi manager is
+constructed the same way: `CombiModuleNavi.initModuleComponents()` executes
+`new InitializationManagerNavi(...)` (`CombiModuleNavi.java:78-83`), which runs from the
+`AbstractBAPModule` constructor (`AbstractBAPModule.java:56`) when `CombiActivator.createModules`
+unconditionally creates `CombiModuleNavi` (`CombiActivator.java:26-35`) — no configuration gate.
+`[decompile]`
+
+**Conclusion.** A ROM-vs-jar binding difference cannot explain the failed candidate: the replacement
+should bind exactly like the audio/phone replacements do. That narrows the failure to the ranked
+hypotheses below (stale jar, false override gate, or an unobserved load failure), and all three are
+closed by logging + the fallback in the next candidate. Only a boot log can *prove* the instance ran;
+the static analysis can only say the mechanism is the proven one. `[code]`
+
+**Why "it logs nothing" proves nothing.** Production runs with `-DLOG=all=0,Ext.Power=5` and
+`-DSLOG=Ext.Startup=5,Fw.Error=2` (`lsd.sh:240-241`): every stock BAP `logChannel` line — including
+the two log calls the replacement carries over from stock — is silenced. The hook's own logger
+(`com/luka/carplay/framework/Log.java`) writes WARN+ to `/tmp/carplay_java.log` (RAM, rotated,
+SSH-tailable; INFO behind a `/mnt/app/carplay_verbose` marker) — the navi replacement never used it.
+The 2026-10-18 test was blind by construction. `[code]`
+
+### The readiness chain end to end (Q2)
+
+Addresses are IDB addresses (both IDBs have image base 0x100000). Native timeline reference: the
+P5092 boot sloginfo (other car) — `startDomain(Nav, 0x700)` at 15 s, `APP_RUN_MODE 1796` (0x704) at
+26 s, `updateDomainState(Nav, 0x3852)` / domain 'navigation' state 0xf0c at 37 s. `[doc]`
+
+```mermaid
+flowchart LR
+    accTitle: Native navigation readiness to the VC NA screen
+    accDescr: servicemgr starts navStartup on the HMI's startDomain request; navStartup checks the map database, starts the engine and PresCon, reports the app run mode; servicemgr forwards it over DSI; the HMI Java starts the Navi component; the BAP init sequence and app state together decide FctID 15.
+    sm["servicemgrmibhigh<br/>startDomain(Nav=6)"] --> launcher["dsistartup.json launcher 'navigation'<br/>init apprunmode 512, run 60 s timeout"]
+    launcher --> nav["navStartup<br/>DB check, SWDL check"]
+    nav --> eng["AppStartATF 'navi'<br/>SignalMapper-1.5.cfg<br/>libPathfinderApp + libPresentationController"]
+    eng --> sdk["StartupNaviSDK + StartupNaviPresCon<br/>60 s wait for PresCon"]
+    sdk --> rep["reportAppRunMode 0x704"]
+    rep --> fwd["[SM] APP_RUN_MODE trace<br/>[updateDomainStatus] -> DSI"]
+    fwd --> jhmi["DomainHandler -> AppStateManager<br/>ComponentState 'Navi' = 1"]
+    jhmi --> bap["appStateChanged -> processAppStateChanged(1)<br/>NORMAL needs initState >= 9"]
+    bap --> vc["FctID 15 OP_State 0<br/>VC leaves the NA screen"]
+```
+
+1. **Domain start (servicemgr side).** Navigation is *not* in `on_startup_normal`
+   (`dsistartup.json`); the HMI's `startDomain(6, 0x700)` request triggers the `"navigation"`
+   launcher: `init` with `apprunmode` 512 (30 s timeout), then `run` (60 s timeout); restart policy 3
+   attempts then `kill_process` (`dsistartup.json:309-350`). `servicemgrmibhigh` spawns
+   `/navigation/navStartup` per `framework.json` (`"navigationProc"`, id 311, `singleapp`
+   `"navigation"`, `NAV_MAP_PATHS=/fs/sda0/navDatabase:/mnt/navdb`, `STYLE_DB_PATHS=/mnt/app/navigation`,
+   `framework.json:318-338`). `[code]`
+2. **navStartup gates.** Checks the map database and SWDL state (strings `NO DATABASE`,
+   `CHECK FAILED`, `READY4NAV`), then starts its children via PMon: `/navigation/AppStartATF` as
+   procname `navi` with `SignalMapper-1.5.cfg` — the ATF module loader that loads
+   `libPresentationController.so` and the 24 MB engine `libPathfinderApp.so` into the one `navi`
+   process — plus `DRController`, `IconProviderApp`, `PNavApp`. `[decompile]` `[code]`
+3. **PresCon handshake.** `StartupNaviPresCon` (helper `sub_11B500`) sends the start command and
+   waits up to 60 s for the response (`StartupPresCon: Did not receive Start Response`); response
+   id 17/value 1 logs `StartupPresCon: Ready for navigation`, id 1/value 1 logs
+   `PresCon running. APP set to running.`. `ReStartPrescon` (`sub_12141C`) shows the sequence:
+   `reportAppRunMode(1)` → IPC → `StartupNaviSDK` (`sub_11CD48`) → PresCon start → on success
+   report the stored run mode (`ReStartPrescon OK runMode %d`). `[decompile]`
+4. **Run mode report.** `servmngt::Application::reportAppRunMode` (`navStartup` `0x11AB6C`) →
+   broker → `servicemgrmibhigh` trace `[SM] APP_RUN_MODE %d reported for %s` (`0x1792C0`) → domain
+   state machine → `[updateDomainStatus] domain '%s' state 0x%x` (`0x175D58`) → the DSIStartup
+   listener (`listener_updateDomainStatusNav`). Observed values: 0x704 = 0x700 base flags +
+   OPERABLE (0x4) at ~26 s; 0xF0C later. The meaning of the high flag bits 0x100/0x200/0x400/0x800
+   is **not decoded** (guess: per-subsystem readiness flags; `apprunmode: 512` seeds 0x200 at init).
+   `[decompile]` `[doc]`
+5. **Java component state.** `hmi_startup.json` (embedded `resources/hmi_startup.json` in
+   `lsd.jxe`, byte-identical to `hmi_startup.json.example`) component "Navi": domain
+   `{id: 6, required_state: "0x700"}`, bundles `adaptermanager` + `AppNavi`, guide module
+   `HMINavi`/`SMNavi`, dependency `{id: 10 (SDS), required_state: 0x300, start_asynchron}`; the
+   "Info" component needs domain 6 ⊇ 0xF00 and stops when Navi fails. The DSI callback chain is
+   `DomainHandler.updateDomainStatusNav` → `updateDomainStatus` → `StartupManager` →
+   `AppStateManager.updateDomainState` → `ComponentState["Navi"].updateDomainState` →
+   `stateUpdate` → `componentStarted` → ChoiceModel 361 = 1 →
+   `appStateChanged("Navi", 1)`. **"Navi" = 1 therefore requires all of:** domain 6 status ⊇ 0x700
+   (inclusion check `(required & ~updated) == 0`), `AppNavi`/`adaptermanager` bundles ACTIVE,
+   guide module active, and the SDS domain ⊇ 0x300. `ComponentState`'s enabled check
+   `(value & -768) != 0` (`ComponentState.java:487`) treats the 0x100/0x400 flag bits as
+   "not enabled". `[decompile]` `[code]`
+6. **BAP init phases (`initState`).** Entirely Java-side, on every NavSD BAP (re)start:
+   `startInitialization` (`AbstractBAPModuleInitializationManagerFSG.java:43-58`) runs
+   `CommandUpdateFunctionList` (state 3, `:371`) → `CommandUpdateOperationState` →
+   `CommandUpdateProperties` (state 4, `:435`) → `CommandUpdateArrays` →
+   `CommandFinishInitializationSequence` (state 9, `:231`); failure 0x42 restarts (state −1, max 5).
+   HMI-ack states 0/1/2/10/11 come from `updateHMIState`
+   (`AbstractBAPModuleInitializationManager.java:158-205`), driven by app-service availability
+   (`AppConnectorNavi.setAppServiceListener` → `notifyAppServiceChanged`).
+   `isOpStateNormalOperation()` has **no call site** in the decompiled tree — only its definitions
+   (checked across the whole MU1316-vf tree). `[decompile]`
+
+**What stock waits for, enumerated:** map database readable + SWDL checks (`navStartup`), the nav
+SDK modules up, PresCon up (60 s timeout), run mode 0x704 reported, SDS domain 0x300,
+`AppNavi`/`adaptermanager`/`HMINavi`/`SMNavi` bundles active, then the NavSD BAP init sequence to 9.
+Any slow or stuck stage extends the INITIALIZING window; the greps in the verification plan below
+attribute a slow boot to its stage.
+
+### Why `1bad426` could fail on the car — ranked hypotheses
+
+| # | Hypothesis | Evidence for/against | What settles it |
+|---|---|---|---|
+| H1 | The jar on the unit was not the `1bad426` build | The build receipt `build/carplay_hook-build.json` (built 2026-10-18 21:20, commit `1bad426`) says `"deployed": false`; the doc status said "not deployed" before the owner test | sha256 of `/mnt/app/eso/hmi/lsd/jars/carplay_hook.jar` vs the receipt (read-only) |
+| H2 | `isClusterPresented()` was false the whole observed window | The gate needs `rendererReady && (connected \|\| videoAvailable) && currentCtx ∈ {80, 81}` (`AltScreenModule.java:113-117`); the worker defers context application until the renderer is ready (`AltScreenModule.java:522`), so cold-boot renderer contention keeps the gate false exactly while the owner watches the text; all refresh edges are wired, so once presented the override should fire | refresh log lines with all gate inputs |
+| H3 | The replacement class did not bind or failed to load | Argued unlikely (binding section) but not excluded without a log | "manager installed" line, or the stock-fallback path serving the refreshes |
+
+### Ranked fixes (Q3)
+
+**Fix A (recommended): keep the `1bad426` override, make it observable and binding-independent.**
+
+- Replace the replacement's diagnostics with `com.luka.carplay.framework.Log` (tag `NavOpState`,
+  WARN level so it is on by default): constructor ("patched manager bound"), every
+  `refreshCarPlayPresentation` (`appState`, `initState`, `bapStackState`, swdl, power, presented,
+  decision), every `setFSGOperationStateValue` (`in=%d out=%d override=%b`).
+- Add a **stock-instance fallback** that works even if the class replacement does not bind. When
+  `InitializationManagerNavi.instance == null`, resolve the live stock manager without any class
+  replacement: `Navigation.getInstance()` (`Navigation.java:423`, public static) →
+  `getClusterService()` (`:1072`) → `getCombiBAPListenerCombiService()` (accessor added by our
+  replaced `ClusterService`, proven on the car) → reflect the protected
+  `AbstractCombiConnector.moduleFsg` field (`AbstractCombiConnector.java:7`, inherited by
+  `AppConnectorNavi`) → public `getInitializationManager()` (`AbstractBAPModule.java:124`) → cast
+  `AbstractBAPModuleInitializationManagerFSG` → reflect protected `fsgOperationStateFunction` →
+  public `getLastStatus()` / `resendLastStatus()` (`BAPFunctionPropertyFSG.java:172,204`).
+  While presented and stock would send INITIALIZING (power on, BAP stack up, no SWDL): set
+  `op_State = 0` on the status object and `resendLastStatus()`; on presentation loss call the
+  stock `updateOperationState()` so the true value is recomputed and resent. Re-assert on the
+  existing refresh edges (start, stop, republish, rendererReady, applyContext finally). Log which
+  path served each refresh ("patched" vs "stock-fallback").
+- Risk: the same presentation-level status write the candidate already makes. The init engine's own
+  state (appState/initState/MOST operation state) is untouched; the init sequence runs on BAP events
+  independently. In the fallback path a forced `op_State = 0` makes the stock
+  `isOpStateNormalOperation()` read true while CarPlay owns the cluster — with no call sites found
+  in the tree this is believed inert, but it is unverified at run time (state as a guess).
+
+**Fix B (only if Fix A's logs show H2):** loosen the gate while a CarPlay session is connected
+(drop `rendererReady`/`currentCtx` from the override condition, keep `connected`). Faster relief,
+but it masks stock initialization whenever a phone is connected and the cluster takeover failed.
+Decide after one logged boot, not before.
+
+**Fix C (rejected):** make stock report readiness earlier — lower `required_state` in the embedded
+`hmi_startup.json` or relax the `navStartup` run-mode bits. This lies about native readiness, the
+Info component depends on 0xF00, and BAP init (initState 9) would still gate NORMAL.
+
+**Fix D (rejected):** VC-side change — least preferred per the task; needs VC firmware work and
+cannot distinguish a stuck HU from a correct one.
+
+### One-boot verification plan
+
+Preparation (owner, before the boot):
+
+1. Deploy the rebuilt jar. After boot, verify read-only that
+   `sha256 /mnt/app/eso/hmi/lsd/jars/carplay_hook.jar` equals the receipt in
+   `build/carplay_hook-build.json` — this alone settles H1.
+2. `touch /mnt/app/carplay_verbose` (INFO level; survives reboot).
+
+Cold boot with the phone connected, then read-only SSH:
+
+3. Native timeline (whole-buffer grep; QNX grep has no `-o`/`\|`):
+   `sloginfo | grep -e startDomain -e APP_RUN_MODE -e updateDomainStatus -e StartupPresCon -e StartupNaviSDK -e READY4NAV`
+   Healthy boot: `startDomain` ≤ 20 s, `APP_RUN_MODE` 0x704 ≈ 26 s, 0xF0C ≈ 37 s. A missing
+   `APP_RUN_MODE` line plus `StartupPresCon: Did not receive Start Response` or a database check
+   failure names the stuck stage.
+4. Hook log: `cat /tmp/carplay_java.log | grep NavOpState`:
+   - "patched manager bound" → H3 dead.
+   - `presented=true` and `OP in=2 out=0` while CarPlay is up → the override fired; if the VC still
+     shows the text at that moment, the problem is downstream (BAP transport/VC) — capture the VC
+     side again.
+   - only "stock-fallback" lines → class replacement did not bind (H3 alive), and the fallback is
+     what must clear the text.
+   - `presented=false` persisting while the phone session is up → gate problem (H2) → Fix B.
+
+Pass criteria: with the CarPlay cluster presented, the VC shows the CarPlay map with no NA text;
+a stock navigation start with CarPlay disconnected still shows the stock screen; the text never
+returns while the same session stays presented.
 
 ## 🖥️ The VC side
 
@@ -207,11 +417,11 @@ flowchart LR
 
 ### Why `7d35b53` does not work
 
-`GatedCombiService` defers `showInitializingScreen()` and reasserts `hideInitializingScreen()` while CarPlay owns the cluster (`java_patch/com/luka/carplay/rgd/GatedCombiService.java:52-75`, `:138-157`). That only keeps `appIsReady` true. `appState == 0`, `initState < 9`, a download or a dropped BAP stack still produce INITIALIZING, and `setAppIsReady(true)` cannot override them. The init manager also lives in the combi bundle and runs before `ClusterService` or our wrapper exist. The regression test (`tests/GatedCombiServiceInitStateTest.java`) checks the deferral logic, not the operation state the VC receives. `[decompile]` `[code]`
+Until 2026-10-19 `GatedCombiService` deferred `showInitializingScreen()` and reasserted `hideInitializingScreen()` while CarPlay owned the cluster (removed; both are pure pass-throughs now). That only kept `appIsReady` true. `appState == 0`, `initState < 9`, a download or a dropped BAP stack still produce INITIALIZING, and `setAppIsReady(true)` cannot override them. The init manager also lives in the combi bundle and runs before `ClusterService` or our wrapper exist. Its regression test (`tests/GatedCombiServiceInitStateTest.java`, removed with it) checked the deferral logic, not the operation state the VC receives. `[decompile]` `[code]`
 
 ### InfoStates in stock
 
-`CombiBAPListener.updateInfoStates()` (`:1100-1122`) sends 6 if `naviIsRunningOnSmartphone`, else the navi info state (`setInfoStateNavi`: 0/1/2), else the GPS state (`setInfoStateGPS`: 0/3). `naviIsRunningOnSmartphone` is set by `setGALState()` (`:2186-2188`) from `GALHandler.updateAppStates` when a terminal-mode navigation app runs on the phone; `GALHandler` is generic terminal mode, so CarPlay is likely included (not verified for CarPlay). InfoStates 5 is sent only by `CombiBAPListener.showSplashScreen(true)`, from the diagnostic `NavigationDiag.cmdKombiToggleSplashScreen`. `GatedCombiService.updateInfoStates` passes every value through (`GatedCombiService.java:177`). `[decompile]` `[code]`
+`CombiBAPListener.updateInfoStates()` (`:1100-1122`) sends 6 if `naviIsRunningOnSmartphone`, else the navi info state (`setInfoStateNavi`: 0/1/2), else the GPS state (`setInfoStateGPS`: 0/3). `naviIsRunningOnSmartphone` is set by `setGALState()` (`:2186-2188`) from `GALHandler.updateAppStates` when a terminal-mode navigation app runs on the phone; `GALHandler` is generic terminal mode, so CarPlay is likely included (not verified for CarPlay). InfoStates 5 is sent only by `CombiBAPListener.showSplashScreen(true)`, from the diagnostic `NavigationDiag.cmdKombiToggleSplashScreen`. `GatedCombiService.updateInfoStates` passes every value through (`GatedCombiService.java:126`). `[decompile]` `[code]`
 
 **On this VC, InfoStates 4 and 6 never reach the state chart.** The KSS AUTOSAR firmware validates the value before EB GUIDE sees it (`sub_108F42C`: `a1 <= 0xF && (a1 & 5) != 4 && (a1 & 0xA) != 8`), which rejects 4, 6, 8, 9, 12 and 13, so `181 Compass_MobileDevice` is unreachable ([VC FPK State Machine](VC_FPK_STATE_MACHINE.md#-infostates-6-is-rejected-by-kss)). Of the stock values, only 1, 2 (hint popups) and 5 (splash) can show anything. `[decompile]`
 
@@ -235,7 +445,7 @@ What the removed patch did: `java_patch/de/audi/app/combi/bap/app/navi/Initializ
    No cache is needed: on release, `updateOperationState()` recomputes the real value from `appState`, `initState` and `appIsReady`, and because it changes back to 2 it is resent. The VC keeps the KDK map window open, since OP 0 calls `VC_TryShowKDKFlap`. Risk (guess): the VC sees NORMAL while the HU init sequence still runs; the sequence finishes on its own, so this looks harmless.
 2. **Optional: neutralise InfoStates in `GatedCombiService`.** While CarPlay owns the cluster, cache the last value and forward 0 for anything that would draw over the map; replay the cached value on release. 6 and 4 are already dropped by the KSS validator on this VC, and 5 is diagnostic only, so this matters only for 1/2 (no data medium, database corrupted), which put a hint popup over the CarPlay map.
 3. **Optional:** gate `routeGuidanceActDeactResult` while CarPlay route guidance is active, so stock route-guidance results cannot pop hints (for example "Route guidance is already active").
-4. The `7d35b53` show/hide deferral stays in the tree (covers `appIsReady` only).
+4. The `7d35b53` show/hide deferral (covers `appIsReady` only) was removed on 2026-10-19 together with `1bad426`.
 
 ## ✅ How to confirm on the car
 

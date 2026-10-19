@@ -33,21 +33,14 @@ for variant in us eu cn; do
         com.luka.carplay.rgd.RendererRerouteTransportTest
 done
 
-# Stock Navigation may remain INITIALIZING while CarPlay already owns the
-# independent cluster video plane. Verify high-level request deferral and the
-# final NAVSD operation-state writer, including native initialization semantics.
+# AltScreen startup scenarios and the context-switch race.
 STOCK_JAR="$PROJECT_DIR/java_stock/US_MU1316_lsd.jar"
 mkdir -p "$TEST_DIR/nav-init"
 "$TEST_JDK/bin/javac" -encoding UTF-8 \
     -cp "$PROJECT_DIR/build/carplay_hook.jar:$STOCK_JAR" \
     -d "$TEST_DIR/nav-init" \
-    "$PROJECT_DIR/tests/GatedCombiServiceInitStateTest.java" \
     "$PROJECT_DIR/tests/AltScreenStartupTest.java" \
-    "$PROJECT_DIR/tests/AltScreenContextRaceTest.java" \
-    "$PROJECT_DIR/tests/NavOperationStateTest.java"
-"$TEST_JDK/bin/java" \
-    -cp "$TEST_DIR/nav-init:$PROJECT_DIR/build/carplay_hook.jar:$STOCK_JAR" \
-    com.luka.carplay.rgd.GatedCombiServiceInitStateTest
+    "$PROJECT_DIR/tests/AltScreenContextRaceTest.java"
 for scenario in cold warm stop bounce-loss; do
     "$TEST_JDK/bin/java" \
         -cp "$TEST_DIR/nav-init:$PROJECT_DIR/build/carplay_hook.jar:$STOCK_JAR" \
@@ -59,11 +52,6 @@ for variant in us eu cn; do
         eu) patch=carplay_hook.jar; stock=EU_MU1329_lsd.jar ;;
         cn) patch=carplay_hook_cn.jar; stock=CN_MU1003_lsd.jar ;;
     esac
-    # Reconstructed J9 stock classes need the same isolated verifier exception
-    # as the other real-stock chain tests. Shipping bytecode stays Java 1.4.
-    "$TEST_JDK/bin/java" -Xverify:none \
-        -cp "$TEST_DIR/nav-init:$PROJECT_DIR/build/$patch:$PROJECT_DIR/java_stock/$stock:$OSGI_CP" \
-        com.luka.carplay.core.NavOperationStateTest
     echo "Context regressions: $variant"
     for scenario in stop change peer readiness reconnect direct target-error rate-error stock-error bounce-error drift; do
         "$TEST_JDK/bin/java" \
