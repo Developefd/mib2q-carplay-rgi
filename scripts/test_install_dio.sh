@@ -12,7 +12,7 @@ T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 { echo 'set -u'
   sed -n '/^backup_once()/p' "$SRC"
   sed -n '/^DIO_SENT_IDS=/p;/^DIO_RECV_IDS=/p' "$SRC"
-  sed -n '/^add_ids()/,/^}/p;/^add_nmea_speed()/,/^}/p;/^patch_dio()/,/^}/p' "$SRC"
+  sed -n '/^add_ids()/,/^}/p;/^del_ids()/,/^}/p;/^add_nmea_speed()/,/^}/p;/^patch_dio()/,/^}/p' "$SRC"
   echo 'DIO=$1; patch_dio'
 } > "$T/h.sh"
 
@@ -42,6 +42,11 @@ for sh in $shells; do
     out=$("$sh" "$T/h.sh" "$T/d") || fail "$sh" "re-run returned non-zero"
     case $out in *'already registered'*) ;; *) fail "$sh" "re-run was not a no-op: $out" ;; esac
     cmp -s "$T/d" "$T/want" || fail "$sh" "re-run changed the file"
+
+    # A sent ID in the received list (issue #23) and a received one in the sent list are moved.
+    sed -e 's/"0x4C05"]/"0x4C05", "0x5201"]/' -e 's/\["0x4E09"/["0x5203", "0x4E09"/' "$T/stock" > "$T/d"
+    "$sh" "$T/h.sh" "$T/d" > /dev/null || fail "$sh" "misplaced IDs: patch returned non-zero"
+    cmp -s "$T/d" "$T/want" || fail "$sh" "misplaced IDs not moved: $(diff "$T/want" "$T/d" | head -3)"
 
     { cat "$T/stock"; grep MessagesSentByAccessory "$T/stock"; } > "$T/bad"; cp "$T/bad" "$T/bad0"
     "$sh" "$T/h.sh" "$T/bad" > /dev/null && fail "$sh" "duplicate list accepted"

@@ -355,8 +355,21 @@ add_ids() {   # $1 = line holding one list, rest = IDs; prints the new line
     done
     printf '%s\n' "$l"
 }
+del_ids() {   # $1 = line holding one list, rest = IDs that belong to the other list; prints the new line
+    l=$1; shift
+    for id in "$@"; do
+        q="\"$id\""
+        case $l in
+            *", $q"*) l=${l%%", $q"*}${l#*", $q"} ;;
+            *"$q, "*) l=${l%%"$q, "*}${l#*"$q, "} ;;
+            *"$q"*)   l=${l%%"$q"*}${l#*"$q"} ;;
+        esac
+    done
+    printf '%s\n' "$l"
+}
 # Every iAP2 message the hook relies on, stock ones included: each is added only when missing,
-# so a dio_manager.json that something else trimmed is repaired too.  iOS identifies a feature
+# so a dio_manager.json that something else trimmed is repaired too; an ID found in the wrong
+# list is moved (0x5203 among the received IDs kept CarPlay from starting, issue #23).  iOS identifies a feature
 # only when every REQUIRED message of its group is declared, and rejects the group otherwise
 # (accessoryd 27.0 __checkIdentificationInfo.kMsg*List, same rule in 26.1); required = *:
 #   now playing (cover art)  sent 0x5000* 0x5002*          received 0x5001*
@@ -383,9 +396,9 @@ patch_dio() {
         case $line in
             *'##'*) new=$line ;;
             *'"MessagesSentByAccessory":['*']'*)
-                sent=$((sent+1)); new=$(add_ids "$line" $DIO_SENT_IDS) ;;
+                sent=$((sent+1)); new=$(add_ids "$(del_ids "$line" $DIO_RECV_IDS)" $DIO_SENT_IDS) ;;
             *'"MessagesReceivedFromDevice":['*']'*)
-                recv=$((recv+1)); new=$(add_ids "$line" $DIO_RECV_IDS) ;;
+                recv=$((recv+1)); new=$(add_ids "$(del_ids "$line" $DIO_SENT_IDS)" $DIO_RECV_IDS) ;;
             *'"nmea":"0x'*)
                 new=$(add_nmea_speed "$line") ;;
             *) new=$line ;;
