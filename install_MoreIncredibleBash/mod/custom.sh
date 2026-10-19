@@ -9,7 +9,7 @@
 #   - in-place runtime patches (per-unit / stock-dependent), done here:
 #       * smartphone_integrator.json  - replace the "carplay" child by path
 #       * pf profiles                 - widen the CarPlay TCP rule (MANDATORY)
-#       * dio_manager.json            - register the iAP2 route-guidance message IDs
+#       * dio_manager.json            - register every iAP2 message ID the hook relies on
 #       * NCM start/stop + usblauncher_otg.lua - only over the exact stock they replace
 #       * SI usb.otgStackCleanupScript -> our generation-aware NCM cleanup
 # No CRC gymnastics, no lock dir. Atomic renames. Upgrade-safe: a stock backup is
@@ -355,12 +355,20 @@ add_ids() {   # $1 = line holding one list, rest = IDs; prints the new line
     done
     printf '%s\n' "$l"
 }
-# iAP2 messages the hook needs Cinemo to declare in Identify: route guidance
-# (0x52xx), telephony (0x415B/0x415C/0x415D AcceptCall/EndCall/SwapCalls, 0x415F/0x4160
-# Hold/MuteStatusUpdate, 0x4170/0x4171 ListUpdates) and vehicle status (0xA100/0xA102
-# Start/StopVehicleStatusUpdates from the phone, 0xA101 VehicleStatusUpdate from the hook).
-DIO_SENT_IDS="0x5200 0x5203 0x415B 0x415C 0x415D 0x415F 0x4160 0x4170 0xA101"
-DIO_RECV_IDS="0x5201 0x5202 0x5204 0x4171 0xA100 0xA102"
+# Every iAP2 message the hook relies on, stock ones included: each is added only when missing,
+# so a dio_manager.json that something else trimmed is repaired too.  iOS identifies a feature
+# only when every REQUIRED message of its group is declared, and rejects the group otherwise
+# (accessoryd 27.0 __checkIdentificationInfo.kMsg*List, same rule in 26.1); required = *:
+#   now playing (cover art)  sent 0x5000* 0x5002*          received 0x5001*
+#   power (phone battery)    sent 0xAE00* 0xAE02*          received 0xAE01*
+#   location (PASCD)         sent 0xFFFB*                  received 0xFFFA* 0xFFFC*
+#   call state / comms       sent 0x4154* 0x4157*          received 0x4155* 0x4158*
+#   call control             sent 0x415B 0x415C 0x415D 0x415F 0x4160 (Accept/End/Swap/Hold/Mute)
+#   list updates             sent 0x4170*                  received 0x4171*
+#   route guidance           sent 0x5200* 0x5203*          received 0x5201* 0x5202* 0x5204
+#   vehicle status           sent 0xA101*                  received 0xA100* 0xA102*
+DIO_SENT_IDS="0x5000 0x5002 0xAE00 0xAE02 0xFFFB 0x4154 0x4157 0x415B 0x415C 0x415D 0x415F 0x4160 0x4170 0x5200 0x5203 0xA101"
+DIO_RECV_IDS="0x5001 0xAE01 0xFFFA 0xFFFC 0x4155 0x4158 0x4171 0x5201 0x5202 0x5204 0xA100 0xA102"
 # "nmea":"0xNNNN" is the NMEA bitmask dio advertises in Identify (LocationInformationComponent).
 # Bit 0x08 = PASCD (VehicleSpeedData): the hook supplies the wheel-speed sentences.
 add_nmea_speed() {   # $1 = line; prints the new line
@@ -393,7 +401,7 @@ patch_dio() {
     [ "$n" = "$want" ] || { echo "  WARN dio_manager.json: only $n/$want IDs after edit; left as-is"; rm -f "$tmp"; return 1; }
     if [ "$changed" = 0 ]; then echo "  dio_manager.json IDs already registered"; rm -f "$tmp"; return 0; fi
     backup_once "$DIO" "$DIO.carplay-stock" || { rm -f "$tmp"; return 1; }
-    chmod 644 "$tmp"; mv -f "$tmp" "$DIO" && echo "  dio_manager.json route-guidance, telephony and vehicle IDs registered (nmea +PASCD)"
+    chmod 644 "$tmp"; mv -f "$tmp" "$DIO" && echo "  dio_manager.json: all hook message IDs registered (nmea +PASCD)"
 }
 
 # ---- lang_data.zip: the Sound effects "CarPlay UpMix" row texts --------------------------

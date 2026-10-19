@@ -1,7 +1,8 @@
 #!/bin/sh
-# patch_dio() from the M.I.B. installer on a stock-shaped dio_manager.json:
-# registers the route-guidance and telephony IDs, keeps "##" comment lines, backs up the
-# stock file once, is a no-op on re-run, and leaves an unexpected layout untouched.
+# patch_dio() from the M.I.B. installer on a trimmed stock-shaped dio_manager.json:
+# adds every missing hook message ID (stock ones too, never twice), ORs the PASCD nmea bit,
+# keeps "##" comment lines, backs up the original once, is a no-op on re-run, and leaves an
+# unexpected layout untouched.
 # Runs under every POSIX/ksh shell available here (QNX 6.5 /bin/sh is pdksh).
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -25,9 +26,9 @@ EOF
 cat > "$T/want" <<'EOF'
         "nmea":"0x000B",
         ## 0x5000/* StartNowPlayingUpdates */
-        "MessagesSentByAccessory":["0x5000", "0x5002", "0x4C05", "0x5200", "0x5203", "0x415B", "0x415C", "0x415D", "0x415F", "0x4160", "0x4170", "0xA101"],
+        "MessagesSentByAccessory":["0x5000", "0x5002", "0x4C05", "0xAE00", "0xAE02", "0xFFFB", "0x4154", "0x4157", "0x415B", "0x415C", "0x415D", "0x415F", "0x4160", "0x4170", "0x5200", "0x5203", "0xA101"],
         ## 0x5001/* NowPlayingUpdate */
-        "MessagesReceivedFromDevice":["0x4E09", "0x5001", "0x4C04", "0x5201", "0x5202", "0x5204", "0x4171", "0xA100", "0xA102"],
+        "MessagesReceivedFromDevice":["0x4E09", "0x5001", "0x4C04", "0xAE01", "0xFFFA", "0xFFFC", "0x4155", "0x4158", "0x4171", "0x5201", "0x5202", "0x5204", "0xA100", "0xA102"],
 EOF
 
 fail() { echo "FAIL ($1): $2"; exit 1; }
@@ -48,4 +49,4 @@ for sh in $shells; do
     [ ! -e "$T/bad.carplay-stock" ] || fail "$sh" "backup made for an untouched file"
 done
 ls "$T" | grep -q carplay-new && fail all "temporary file left behind"
-echo "dio_manager.json route-guidance + telephony + vehicle IDs, nmea PASCD bit:$shells PASS"
+echo "dio_manager.json every hook message ID (stock ones re-added when missing), nmea PASCD bit:$shells PASS"
