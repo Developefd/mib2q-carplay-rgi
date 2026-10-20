@@ -511,6 +511,22 @@ patch_mcd() {
     return 0
 }
 
+# ---- mcd.conf: lower detector-thread priority (11,10 -> 11,3) so media-watch scans run on
+# slack CPU.  In-place sed, idempotent, train-agnostic: only the active Priority lines are
+# rewritten; the device list, commented lines and everything else stay exactly stock.
+MCD_CONF=/mnt/system/etc/mcd.conf
+patch_mcd_conf() {
+    [ -f "$MCD_CONF" ] || { echo "  WARN no $MCD_CONF"; return 0; }
+    grep -q '^Priority[[:space:]]*=[[:space:]]*11,10$' "$MCD_CONF" ||
+        { echo "  $MCD_CONF already at lowered detector priority"; return 0; }
+    backup_once "$MCD_CONF" "$MCD_CONF.carplay-stock" || return 1
+    tmp=$MCD_CONF.carplay-new.$$
+    sed 's/^\(Priority[[:space:]]*=[[:space:]]*11\),10$/\1,3/' "$MCD_CONF" > "$tmp" &&
+        chmod 644 "$tmp" && mv -f "$tmp" "$MCD_CONF" ||
+        { rm -f "$tmp"; echo "FAILED patch $MCD_CONF"; return 1; }
+    echo "  $MCD_CONF (detector priority 11,10 -> 11,3)"
+}
+
 echo "custom.sh: CarPlay $ACTION"
 echo "Remounting app and system read-write..."
 mount -uw /mnt/app    2>/dev/null || true
@@ -644,6 +660,7 @@ EOF
     done
     patch_si || exit 1
     patch_mcd || exit 1
+    patch_mcd_conf || exit 1
     gate_audio || exit 1
     patch_json
     patch_ncm
@@ -673,6 +690,7 @@ uninstall)
     [ -e "$DIO.carplay-stock" ] && mv -f "$DIO.carplay-stock" "$DIO"
     [ -e "$SI_BIN.carplay-stock" ] && mv -f "$SI_BIN.carplay-stock" "$SI_BIN"
     [ -e "$MCD_BIN.carplay-stock" ] && mv -f "$MCD_BIN.carplay-stock" "$MCD_BIN"
+    [ -e "$MCD_CONF.carplay-stock" ] && mv -f "$MCD_CONF.carplay-stock" "$MCD_CONF"
     [ -e "$LANG_ZIP.carplay-stock" ] && mv -f "$LANG_ZIP.carplay-stock" "$LANG_ZIP" && echo "  restored $LANG_ZIP"
     for f in $NCM_FILES; do
         [ -e "$f.carplay-stock" ] && mv -f "$f.carplay-stock" "$f"

@@ -34,6 +34,7 @@ Argument	= /etc/mcd.mnt
 [UNMOUNT]
 Callout		= UNMOUNT_FSYS
 
+
 # Assumption is that /fs/cd* is already mounted
 #[/dev/cd*]
 #Callout		= CD_MEDIA_IOBLK
@@ -44,6 +45,20 @@ Callout		= UNMOUNT_FSYS
 
 # If mcd is used to mount/unmount /fs/cd*, the previous description should be
 # commented out and the following two descriptions uncommented.
+[/dev/cd*]
+Callout		= CD_MEDIA_IOBLK
+Argument	= 250,500
+Priority	= 11,3
+Start Rule  = MOUNT
+Stop Rule   = UNMOUNT
+
+[/fs/cd*]
+Callout		= PATH_MEDIA_PROCMGR
+Argument	= /proc/mount
+Priority	= 11,3
+Start Rule	= AUTORUN
+Stop Rule	= EJECTED
+
 [/fs/usb*]
 Callout		= PATH_MEDIA_PROCMGR
 Argument	= /proc/mount

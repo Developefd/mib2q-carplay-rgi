@@ -12,7 +12,7 @@ one-site binary patch that removes the burst.
 | `mcd.stock`       | `f11d13ff…441dd593` | stock daemon, imagebase 0x100000, not stripped |
 | `mcd.custom`      | `e18f3055…5c5387ee` | patched daemon (built by `binpatch`, IDA-verified) |
 | `mcd.conf.stock`  | `c653517d…4272092`  | stock config, 13 active device-watch sections |
-| `mcd.conf.custom` | `34923e0a…fe46485`  | optional: cd sections pruned, detector priority lowered |
+| `mcd.conf.custom` | `d0a33ae2…68a8033`  | optional: detector priority lowered 11,10 -> 11,3 (device list unchanged) |
 
 All four are byte-identical across the US (P5087/MU1316), ER (P5092/MU1329) and
 CN (K1004/MU1003) trains — verified by carving each from the firmware `app.img`
@@ -88,18 +88,23 @@ sha256sum /tmp/mcd.custom     # -> e18f3055…5c5387ee
 
 Exit 0 = patched, 3 = already patched (nothing written), 1 = no unique match.
 
-## Optional config lever (`mcd.conf.custom`)
+## Config lever: detector priority (`mcd.conf.custom`)
 
-Independent of the binary patch, and effective on its own:
+Shipped alongside the binary patch. It lowers every active section's
+`Priority = 11,10` to `11,3`, so whatever scanning remains runs on slack CPU
+instead of near the media priority band. The device list is left exactly as
+stock — nothing is pruned.
 
-- **Prune the two `cd` sections** (`/dev/cd*`, `/fs/cd*`): this unit has no
-  optical drive, so those two detector threads are pure waste. 13 → 11 threads.
-- **Lower detector priority** `11,10` → `11,3`: whatever scanning remains runs
-  on slack CPU instead of near the media priority band.
+The installer applies it in place (`patch_mcd_conf` in custom.sh) with a single
+`sed` that only rewrites the active `Priority` lines; it is idempotent and
+train-agnostic. `mcd.conf.custom` is the reference result of that transform on
+`mcd.conf.stock`.
 
-Further pruning (`/fs/online`, `ipod*`, `pfs*`, `upnp*`, `/mnt/media`) needs a
-live check of which `/dev` and `/fs` nodes the unit actually creates — not done
-here, to avoid breaking media detection.
+**Not done: pruning.** Dropping dead sections would cut detector threads
+(e.g. the two `cd` sections — this unit has no optical drive, and `/fs/online`,
+`ipod*`, `pfs*`, `upnp*`, `/mnt/media`), but that needs a live check of which
+`/dev` and `/fs` nodes the unit actually creates, or media detection breaks.
+Left for a hardware audit on the car.
 
 ## Deploy (owner reboot required; not done here)
 
@@ -116,7 +121,8 @@ Config (read-only system partition):
 ```sh
 mount -uw /mnt/system
 cp /mnt/system/etc/mcd.conf /mnt/system/etc/mcd.conf.stock          # backup once
-cp mcd.conf.custom /mnt/system/etc/mcd.conf
+sed 's/^\(Priority[[:space:]]*=[[:space:]]*11\),10$/\1,3/' \
+    /mnt/system/etc/mcd.conf.stock > /mnt/system/etc/mcd.conf
 mount -ur /mnt/system
 ```
 
