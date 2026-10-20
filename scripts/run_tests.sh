@@ -212,6 +212,21 @@ cc -std=c99 -O1 -Wall -Wextra -Werror -Wno-unused-function \
     hook/framework/iap2_protocol.c -o "$OUT/vehicle_hook"
 "$OUT/vehicle_hook"
 
+printf '%-32s ' decoder_optimize_hook_test
+cc -std=c99 -O1 -Wall -Wextra -Werror -Wno-unused-function \
+    -DENABLE_LOGGING=0 -DDECODER_OPTIMIZE_HOOK_TESTING -Ihook tests/decoder_optimize_hook_test.c hook/decoder_optimize/decoder_optimize_hook.c \
+    -o "$OUT/decoder_optimize_hook"
+"$OUT/decoder_optimize_hook"
+
+# The same suite with the real logging.c, as in the shipping .so: the refusal
+# branches' log arguments are evaluated for real here, so an unprobed
+# dereference in a log line cannot hide behind ENABLE_LOGGING=0.
+printf '%-32s ' decoder_optimize_hook_logging_test
+cc -std=c99 -O1 -Wall -Wextra -Werror -Wno-unused-function \
+    -DENABLE_LOGGING=1 -DDECODER_OPTIMIZE_HOOK_TESTING -Ihook tests/decoder_optimize_hook_test.c hook/decoder_optimize/decoder_optimize_hook.c \
+    hook/framework/logging.c -lpthread -o "$OUT/decoder_optimize_hook_logging"
+"$OUT/decoder_optimize_hook_logging"
+
 printf '%-32s ' inject_generation_test
 cc -std=c99 -O1 -Wall -Wextra -Werror -Wno-unused-function \
     -DENABLE_LOGGING=0 -Ihook -Ihook/framework tests/inject_generation_test.c -o "$OUT/inject_generation"

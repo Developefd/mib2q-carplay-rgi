@@ -16,6 +16,7 @@
 #include "altscreen/altscreen_hook.h"
 #include "telephony/tel_hook.h"
 #include "vehicle/vehicle_hook.h"
+#include "decoder_optimize/decoder_optimize_hook.h"
 #if HOOK_WIRELESS
 #include "wireless/wireless_hook.h"
 #endif
@@ -38,6 +39,7 @@ const hook_module_def_t* const hook_module_table[] = {
     &altscreen_module_def,
     &tel_module_def,
     &vehicle_module_def,
+    &decoder_optimize_module_def,
 #if HOOK_AUDIO
     &audio_module_def,
     &upmix_level_module_def,

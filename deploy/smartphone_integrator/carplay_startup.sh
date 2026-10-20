@@ -63,6 +63,14 @@ export LD_PRELOAD="$H/libcarplay_hook.so"
 export ALTSCREEN_HANDLE_ALT=1
 export ALTSCREEN_ADVERT_DISPLAYS=1
 
+# Video decode feed tuning (hook module "decoder_optimize"; reversed facts in
+# dio_asm_to_c/_legacy_attempt/libairplay-mhi2q/reversed/04_video_decoder_optimization.md).
+# The hook automatically reduces the decode-feed and present queues from 4 to 2
+# after verifying the stock libairplay and both patch signatures.
+# Optional thread priority, read natively by stock libairplay
+# (OmxVideoImpl::initialize); default 17.
+# export SCREEN_RECEIVER_THREAD_PRIO=32
+
 # Vehicle data to the phone and phone data to the cluster over iAP2 (docs/connect-and-usb/VEHICLE_DATA_TO_PHONE.md).
 # IAP2_VEHICLE_STATUS: VehicleStatusUpdate 0xA101 (range, outside temperature, low-range warning) plus the Identify
 #   components VehicleInformation (20) and VehicleStatus (21); needs the 0xA100-0xA102 IDs in dio_manager.json (installer).

@@ -131,7 +131,8 @@ carplay_build_hook() {
           framework/airplay_seams.c \
           routeguidance/rgd_tlv.c routeguidance/rgd_hook.c \
           coverart/jpeg_safety.c coverart/coverart_stream.c coverart/coverart_hook.c \
-          altscreen/altscreen_av.c altscreen/altscreen_hook.c telephony/tel_hook.c vehicle/vehicle_hook.c main.c"
+          altscreen/altscreen_av.c altscreen/altscreen_hook.c telephony/tel_hook.c vehicle/vehicle_hook.c \
+          decoder_optimize/decoder_optimize_hook.c main.c"
     AUDIO_SRCS="audio/spatial_downmix.c audio/apap_crypto.c audio/apap_lifecycle.c \
           audio/apac_codec_loader.c audio/aac_bridge.c audio/audio_hook.c audio/upmix_level.c"
     HOOK_CFLAGS="-fPIC -O2 -std=gnu99 -fvisibility=hidden -fdata-sections -ffunction-sections '"$CFLAGS_EXTRA"' $EXTRA_CC -I. -I/src/apac_decoder/include"
