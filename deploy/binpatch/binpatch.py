@@ -30,6 +30,17 @@ PATCHES = {
         (h('30 15 d6 e5 53 ce 86 e2 31 25 d6 e5 d8 00 84 e2'), h('00 30 a0 e3'),
          h('2e 33 09 e0'), h('08 c0 8c e2 04 e0 8d e5 08 b0 8d e5 00 c0 8d e5')),
     ],
+    # mcd detector-thread CPU coalescing (mcd/README.md): the PATH_MEDIA_PROCMGR
+    # directory-watch loop blocked on sigwaitinfo(signal 58), so every PATHSPACE pulse
+    # fanned out to all 13 detector threads and each rescanned the tree at once. Replace
+    # the blocking wait with a 200 ms poll delay - the pulse stays pending harmlessly and
+    # scans cap at ~5 Hz/thread.  ADD R0,SP,#0x218 -> MOV R0,#200 ; BL sigwaitinfo -> BL delay.
+    'mcd': [
+        (h('22 1e 8d e2 21 2e 8d e2 00 30 a0 e3 2a ff ff eb'),
+         h('86 0f 8d e2 00 10 a0 e3 73 eb ff eb'),
+         h('c8 00 a0 e3 00 10 a0 e3 f7 eb ff eb'),
+         h('c4 ff ff ea 7d eb ff eb 00 40 90 e5 10 02 9d e5')),
+    ],
 }
 
 
