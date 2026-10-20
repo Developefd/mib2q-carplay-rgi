@@ -489,6 +489,28 @@ patch_si() {
     return 0
 }
 
+# ---- mcd: detector fan-out coalescing, patched into THIS unit's own binary ------------
+# Same signature patcher as the SI fix; mcd is byte-identical on P5087/P5092/K1004, so one
+# patch covers all three.  Replaces the detector loop's sigwaitinfo wait with delay(200),
+# capping media-watch scans at ~5 Hz/thread.  Non-fatal: mcd stays stock if it does not match.
+MCD_BIN=/mnt/app/armle/usr/sbin/mcd
+patch_mcd() {
+    find_mp || { echo "  WARN no M.I.B. micropython - mcd stays stock (no fan-out coalescing)"; return 0; }
+    [ -f "$MCD_BIN" ] || { echo "  WARN no $MCD_BIN"; return 0; }
+    src=$MCD_BIN; [ -f "$MCD_BIN.carplay-stock" ] && src=$MCD_BIN.carplay-stock
+    rm -f "$MCD_BIN.carplay-new"
+    "$mp" -X heapsize=8M "$RES/binpatch.py" mcd "$src" "$MCD_BIN.carplay-new"; rc=$?
+    case $rc in
+        0) backup_once "$MCD_BIN" "$MCD_BIN.carplay-stock" || { rm -f "$MCD_BIN.carplay-new"; return 1; }
+           chmod 755 "$MCD_BIN.carplay-new" && mv -f "$MCD_BIN.carplay-new" "$MCD_BIN" ||
+               { rm -f "$MCD_BIN.carplay-new"; echo "FAILED activate $MCD_BIN"; return 1; }
+           echo "  $MCD_BIN (detector fan-out coalescing patched in)" ;;
+        3) echo "  $MCD_BIN already carries the fan-out coalescing" ;;
+        *) rm -f "$MCD_BIN.carplay-new"; echo "  WARN mcd stays stock (no fan-out coalescing)" ;;
+    esac
+    return 0
+}
+
 echo "custom.sh: CarPlay $ACTION"
 echo "Remounting app and system read-write..."
 mount -uw /mnt/app    2>/dev/null || true
@@ -621,6 +643,7 @@ EOF
         else echo "  WARN could not remove $j"; fi
     done
     patch_si || exit 1
+    patch_mcd || exit 1
     gate_audio || exit 1
     patch_json
     patch_ncm
@@ -649,6 +672,7 @@ uninstall)
     [ -e "$CFG.carplay-stock" ] && mv -f "$CFG.carplay-stock" "$CFG"
     [ -e "$DIO.carplay-stock" ] && mv -f "$DIO.carplay-stock" "$DIO"
     [ -e "$SI_BIN.carplay-stock" ] && mv -f "$SI_BIN.carplay-stock" "$SI_BIN"
+    [ -e "$MCD_BIN.carplay-stock" ] && mv -f "$MCD_BIN.carplay-stock" "$MCD_BIN"
     [ -e "$LANG_ZIP.carplay-stock" ] && mv -f "$LANG_ZIP.carplay-stock" "$LANG_ZIP" && echo "  restored $LANG_ZIP"
     for f in $NCM_FILES; do
         [ -e "$f.carplay-stock" ] && mv -f "$f.carplay-stock" "$f"
