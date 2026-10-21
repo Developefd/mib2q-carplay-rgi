@@ -8,7 +8,7 @@ _CarPlay for the Audi MHI2Q head unit: the map and route guidance in the Virtual
 > logo after the first reboot. Latest versions:
 >
 > - `MHI2Q_US_AUG22_P5087` (MU1316)
-> - `MHI2Q_ER_AUG22_P5092` (MU1329)
+> - `MHI2Q_ER_AUG22_P5092` or `MHI2Q_ER_AUG22_P5152` (both MU1329)
 > - `MHI2Q_CN_AUG22_K1004` (MU1003)
 >
 > Already stuck on the logo? Follow the
@@ -252,7 +252,7 @@ and `FUZZ_SECONDS` sets the budget per target. Contracts and limits:
 ## 🚀 Deployment
 
 **Compatibility.** Audi MHI2Q only: the installer reads the firmware version from E2P and stops on
-anything else. On a firmware other than the verified ones (US P5087, ER P5092, CN K1004, JP P1017)
+anything else. On a firmware other than the verified ones (US P5087, ER P5092 and P5152, CN K1004, JP P1017)
 it stops once with a warning and changes nothing; running it again before the next reboot installs
 anyway. It does the same when another CarPlay cluster mod is installed (MIBSI, the CarPlay AltScreen
 toolbox, mibr): such a mod takes the cluster video and rewrites the CarPlay configuration, so remove it
