@@ -36,12 +36,20 @@ for sh in $shells; do
     printf '0x3a0: 4D484932515F55535F41554732325F5035303837\n' > "$T/us"
     printf 'E2P read\n0x000003a0 4d 48 49 32 5f 45 52 5f 56 57 47 31 33 5f 50 34 35 32 31\n' > "$T/vw"
     printf '0x000003a0 4d 48 49 32 51 5f 45 52 5f 50 4f 47 32 34 5f 50 35 30 30 30\n' > "$T/po"
+    # the train padded with spaces, with 0xFF, or ended by NUL with junk behind it
+    printf '0x3a0 \t4d 48 49 32 51 5f 55 53 5f 41 55 47 32 32 5f 50\n0x3b0 \t35 30 38 37 20 20 20 20 20\n' > "$T/sp"
+    printf '0x3a0 \t4d 48 49 32 51 5f 55 53 5f 41 55 47 32 32 5f 50\n0x3b0 \t35 30 38 37 ff ff ff ff ff\n' > "$T/ff"
+    printf '0x3a0 \t4d 48 49 32 51 5f 45 52 5f 41 55 47 32 32 5f 50\n0x3b0 \t35 30 39 32 00 41 42 20 31\n' > "$T/nul"
     for case in "cn:MHI2Q_CN_AUG22_K1004:MHI2Q:CN:AUG22:K1004" "us:MHI2Q_US_AUG22_P5087:MHI2Q:US:AUG22:P5087" \
-                "vw:MHI2_ER_VWG13_P4521:MHI2:ER:VWG13:P4521" "po:MHI2Q_ER_POG24_P5000:MHI2Q:ER:POG24:P5000"; do
+                "vw:MHI2_ER_VWG13_P4521:MHI2:ER:VWG13:P4521" "po:MHI2Q_ER_POG24_P5000:MHI2Q:ER:POG24:P5000" \
+                "sp:MHI2Q_US_AUG22_P5087:MHI2Q:US:AUG22:P5087" "ff:MHI2Q_US_AUG22_P5087:MHI2Q:US:AUG22:P5087" \
+                "nul:MHI2Q_ER_AUG22_P5092:MHI2Q:ER:AUG22:P5092"; do
         f=${case%%:*}; want=${case#*:}
         got=$(E2P_READ="cat $T/$f" "$sh" -c ". $T/f.sh; read_train; echo \$TRAIN:\$(train_field 1):\$(train_field 2):\$(train_field 3):\$(train_field 4)")
         [ "$got" = "$want" ] || fail "$sh" "E2P $f -> '$got', want '$want'"
     done
+    got=$(E2P_READ="cat $T/sp" "$sh" -c ". $T/f.sh; read_train; train_verified && echo y || echo n")
+    [ "$got" = y ] || fail "$sh" "space-padded P5087 not verified"
     got=$(E2P_READ="false" "$sh" -c ". $T/f.sh; read_train; echo \"[\$TRAIN]\"")
     [ "$got" = "[]" ] || fail "$sh" "unreadable E2P -> '$got'"
     for case in "0x000000fc 02:external" "0xfc: 01:internal" "0x000000fc ff:unknown" ":unknown"; do

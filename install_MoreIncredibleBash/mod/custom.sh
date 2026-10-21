@@ -77,14 +77,19 @@ e2p_bytes() {
 
 # Firmware train, read like M.I.B. (config/GLOBALS: modifyE2P r 3A0 19),
 # e.g. MHI2Q_CN_AUG22_K1004 = platform _ region _ brand(AU=Audi)+platform-generation _ version.
-# Sets TRAIN (empty if unreadable).
+# Sets TRAIN (empty if unreadable).  The train is letters, digits and '_'; it ends at the first
+# other byte (NUL, space or 0xFF padding: a space-padded train printed fine but failed the
+# verified-train match).
 E2P_READ=${E2P_READ:-"on -f rcc /usr/apps/modifyE2P r 3A0 19"}
 read_train() {
     TRAIN=
     for b in $(e2p_bytes "$E2P_READ"); do
         d=$((16#$b))
-        [ $d -ge 32 ] && [ $d -lt 127 ] || continue
-        TRAIN=$TRAIN$(printf "\\$((d/64))$((d/8%8))$((d%8))")
+        c=$(printf "\\$((d/64))$((d/8%8))$((d%8))")
+        case $c in
+            [A-Za-z0-9_]) TRAIN=$TRAIN$c ;;
+            *) [ -z "$TRAIN" ] || break ;;
+        esac
     done
 }
 
