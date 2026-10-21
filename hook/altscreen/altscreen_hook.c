@@ -678,7 +678,8 @@ static void *build_displays(int night)
          * reject the whole displays set and teardown-loop the session.  This can
          * happen on an early /info before graphics is up, so publish NEITHER key
          * this request (caller skips injection); a later /info retries. */
-        LOG_ERROR(LOG_MODULE, "build_displays: stock main unavailable err=%d — skipping displays this /info", err);
+        LOG_ERROR(LOG_MODULE, "build_displays: stock main unavailable err=%d%s — skipping displays this /info",
+                  err, ap_status(err));
         return 0;
     }
     if (main_disp_modernize(mainDisp, night) != 0) {
@@ -904,8 +905,8 @@ static void alt_on_server_info(void *session, void *info)
             } else {
                 infoNight = g_alt_night_mode ? 1 : 0;
                 LOG_WARN(LOG_MODULE,
-                         "stock /info nightMode unavailable err=%d; retaining cached=%d",
-                         nightErr, infoNight);
+                         "stock /info nightMode unavailable err=%d%s; retaining cached=%d",
+                         nightErr, ap_status(nightErr), infoNight);
             }
             if (cf_rel) cf_rel(nightKey);
         } else {
@@ -1659,7 +1660,7 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
 {
     altslot_t *slot;
     void  *server;
-    int    err = -6719, family, port = 0, sock = -1, started = 0;
+    int    err = kAlreadyInitializedErr, family, port = 0, sock = -1, started = 0;
     int    retiredListeners[ALT_MAX_SESSIONS];
     int    retiredCount = 0;
     int    applyQos = 0;
@@ -1713,7 +1714,7 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
         LOG_ERROR(LOG_MODULE,
                   "alt_setup: all %d receiver slots are still retiring; refusing without blocking",
                   ALT_MAX_SESSIONS);
-        return -6728;
+        return kNoMemoryErr;
     }
     LOG_INFO(LOG_MODULE, "alt_setup: begin session=%p streamDesc=%p (OFF aes=%d fam=%d srv=%d)",
              session, streamDesc, OFF_AESKEY, OFF_FAMILY, OFF_SERVER);
@@ -1723,7 +1724,7 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
         connID = kconn ? cf_geti64(streamDesc, kconn, NULL) : 0;
         if (kconn && cf_rel) cf_rel(kconn);
     }
-    if (!connID) { LOG_ERROR(LOG_MODULE, "alt_setup: connID missing (streamConnectionID absent)"); err = -6715; goto fail; }
+    if (!connID) { LOG_ERROR(LOG_MODULE, "alt_setup: connID missing (streamConnectionID absent)"); err = kVersionErr; goto fail; }
     LOG_INFO(LOG_MODULE, "alt_setup: connID=%llu", (unsigned long long)connID);
 
     int use_legacy = 1;
@@ -1756,14 +1757,15 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
      * AirPlayReceiverSessionSetup@0x63eb0-0x63ed8 selects -6030 for type 110 and
      * -6031 for type 111. Sharing -6030 races stock 210's main listener. */
     err = srv_sockopen(family, 1 /*SOCK_STREAM*/, 6 /*IPPROTO_TCP*/, -6031, &port, -180224, &sock);
-    LOG_INFO(LOG_MODULE, "alt_setup: srv_sockopen err=%d port=%d sock=%d family=%d", err, port, sock, family);
+    LOG_INFO(LOG_MODULE, "alt_setup: srv_sockopen err=%d%s port=%d sock=%d family=%d",
+             err, ap_status(err), port, sock, family);
     if (err) goto fail;
 
     pthread_mutex_lock(&alt_lock);
     if (slot->closing || !slot->settingUp || !slot->inUse ||
         slot->session != session) {
         pthread_mutex_unlock(&alt_lock);
-        err = -6719;
+        err = kAlreadyInitializedErr;
         goto fail;
     }
     pthread_mutex_unlock(&alt_lock);
@@ -1773,7 +1775,7 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
      * cannot leave this function before the thread is live; if thread creation
      * fails, the interpose propagates the error and the response is discarded. */
     rdesc = cf_dictm(0, 0, dict_keycb, dict_valcb);
-    if (!rdesc) { err = -6728; goto fail; }
+    if (!rdesc) { err = kNoMemoryErr; goto fail; }
     set_i64(rdesc, "type", ALT_STREAM_TYPE);
     set_i64(rdesc, "dataPort", port);
 #ifdef MHI2Q_WIRELESS_ALT_QEMU
@@ -1783,11 +1785,11 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
      * This keeps failure transactional: a pthread failure cannot leave a dead
      * type-111/dataPort entry in an otherwise-successful stock SETUP response. */
     threadArg = (altthread_arg_t *)calloc(1, sizeof(*threadArg));
-    if (!threadArg) { err = -6728; goto fail; }
+    if (!threadArg) { err = kNoMemoryErr; goto fail; }
     pthread_mutex_lock(&alt_lock);
     if (slot->closing || !slot->settingUp) {
         pthread_mutex_unlock(&alt_lock);
-        err = -6719;
+        err = kAlreadyInitializedErr;
         goto fail;
     }
     slot->generation++;
@@ -1810,9 +1812,9 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
         slot->altSock = -1;
     }
     pthread_mutex_unlock(&alt_lock);
-    if (!started) { err = -6728; goto fail; }
+    if (!started) { err = kNoMemoryErr; goto fail; }
     if (alt_add_response_stream(responseParams, rdesc) != 0) {
-        err = -6728;
+        err = kNoMemoryErr;
         goto fail;
     }
     if (cf_rel) { cf_rel(rdesc); rdesc = NULL; }
@@ -1829,7 +1831,7 @@ static int alt_setup(void *session, void *streamDesc, void *responseParams)
     if (slot->closing || !slot->settingUp || !slot->inUse ||
         slot->session != session) {
         pthread_mutex_unlock(&alt_lock);
-        err = -6719;
+        err = kAlreadyInitializedErr;
         goto fail;
     }
     if (altav_claim(av_gen)) {
@@ -1875,7 +1877,7 @@ fail:
     pthread_mutex_unlock(&alt_lock);
     if (revokedCommandGen) alt_command_revoke(revokedCommandGen);
     if (sock >= 0) close(sock);
-    LOG_ERROR(LOG_MODULE, "alt-screen setup failed err=%d", err);
+    LOG_ERROR(LOG_MODULE, "alt-screen setup failed err=%d%s", err, ap_status(err));
     return err;
 }
 
@@ -2229,12 +2231,12 @@ static void zone_cmd_done(int status, void *resp, void *ctx)
     (void)resp;
     if (!gen || !alt_generation_is_current(gen)) {
         LOG_INFO(LOG_MODULE,
-                 "updateViewArea stale ack dropped: mode=%d gen=%u status=%d",
-                 mode, (unsigned)gen, status);
+                 "updateViewArea stale ack dropped: mode=%d gen=%u status=%d%s",
+                 mode, (unsigned)gen, status, ap_status(status));
         return;
     }
-    LOG_INFO(LOG_MODULE, "updateViewArea ack: mode=%d gen=%u status=%d",
-             mode, (unsigned)gen, status);
+    LOG_INFO(LOG_MODULE, "updateViewArea ack: mode=%d gen=%u status=%d%s",
+             mode, (unsigned)gen, status, ap_status(status));
     zone_send_ack(mode, status);
     /* Maps scene options are independent of safeArea. Apply the matching URL
      * only after this view area succeeded, and ignore a stale ACK after a rapid
@@ -2296,7 +2298,7 @@ static void *alt_retain_session_for_gen(uint32_t gen)
 
 static int alt_send_locked_for_gen(uint32_t gen, void *cmd, void *completion, void *ctx)
 {
-    int rc = -6735;
+    int rc = kUnsupportedErr;
     void *sess = alt_retain_session_for_gen(gen);
     if (sess) {
         rc = sess_sendcmd(sess, cmd, completion, ctx);
@@ -2310,11 +2312,11 @@ static int alt_send_locked_for_gen(uint32_t gen, void *cmd, void *completion, vo
 /* Build and ship one of the three predeclared view-area indexes. */
 static int zone_send_mode(uint32_t gen, int mode, int dur, void *completion)
 {
-    int index, rc = -6728;
+    int index, rc = kNoMemoryErr;
     void *params = NULL, *cmd = NULL, *adj = NULL, *pk = NULL, *ak = NULL;
 
     if (!gen) gen = alt_generation_for_session(NULL);
-    if (!gen) return -6735; /* callback context and queued command use one snapshot */
+    if (!gen) return kUnsupportedErr; /* callback context and queued command use one snapshot */
 
     if (mode == ALT_ZONE_SPORTSCREEN) index = 1;
     else if (mode == ALT_ZONE_CLASSICSCREEN) index = 2;
@@ -2323,7 +2325,7 @@ static int zone_send_mode(uint32_t gen, int mode, int dur, void *completion)
         !cf_dictset || !cf_str || !cf_dictseti || !cf_arrm || !arr_cb ||
         !cf_arrappi64) {
         LOG_ERROR(LOG_MODULE, "updateViewArea: CF symbols unresolved");
-        return -6735;
+        return kUnsupportedErr;
     }
 
     params = cf_dictm(0, 0, dict_keycb, dict_valcb);
@@ -2346,9 +2348,9 @@ static int zone_send_mode(uint32_t gen, int mode, int dur, void *completion)
         rc = alt_send_async_for_gen_key(gen, cmd, completion,
                                     completion ? (void *)packed : NULL, ALT_COMMAND_VIEW_AREA);
         LOG_INFO(LOG_MODULE,
-                 "updateViewArea ship mode=%s index=%d adjacent=%s dur=%dms rc=%d",
+                 "updateViewArea ship mode=%s index=%d adjacent=%s dur=%dms rc=%d%s",
                  alt_zone_name(mode), index,
-                 mode == ALT_ZONE_FULLSCREEN ? "[]" : "[0]", dur, rc);
+                 mode == ALT_ZONE_FULLSCREEN ? "[]" : "[0]", dur, rc, ap_status(rc));
     }
 done:
     if (ak && cf_rel) cf_rel(ak);
@@ -2397,7 +2399,7 @@ static void alt_cmd_done(int status, void *resp, void *ctx)
 {
     (void)resp;
     const char *type = ctx ? (const char *)ctx : "?";
-    LOG_INFO(LOG_MODULE, "session command '%s' ack: status=%d", type, status);
+    LOG_INFO(LOG_MODULE, "session command '%s' ack: status=%d%s", type, status, ap_status(status));
 
 }
 
@@ -2408,8 +2410,8 @@ static void alt_showui_done(int status, void *resp, void *ctx)
 {
     uint32_t gen = (uint32_t)(uintptr_t)ctx;
     (void)resp;
-    LOG_INFO(LOG_MODULE, "session command 'showUI' ack: gen=%u status=%d",
-             (unsigned)gen, status);
+    LOG_INFO(LOG_MODULE, "session command 'showUI' ack: gen=%u status=%d%s",
+             (unsigned)gen, status, ap_status(status));
     if (status == 0 && alt_generation_is_current(gen))
         alt_request_cluster_idr(gen, "showUI-accepted");
     else if (status == 0)
@@ -2433,8 +2435,8 @@ static void *alt_params_new(int wantUuid)
 /* ship {type, params} with the logging completion; consumes (releases) params. */
 static int alt_ship(uint32_t gen, const char *type, void *params) {
     if (!params)
-        return -6728;
-    int rc = -6728;
+        return kNoMemoryErr;
+    int rc = kNoMemoryErr;
     void *cmd = cf_dictm(0, 0, dict_keycb, dict_valcb), *pk = NULL;
     if (cmd) {
         if (set_str(cmd, "type", type) != 0) goto done;
@@ -2451,7 +2453,7 @@ static int alt_ship(uint32_t gen, const char *type, void *params) {
                                             (void *)(uintptr_t)gen, key);
         else
             rc = alt_send_async_for_gen_key(gen, cmd, (void *)alt_cmd_done, (void *)type, key);
-        LOG_INFO(LOG_MODULE, "session cmd '%s' shipped gen=%u rc=%d", type, (unsigned)gen, rc);
+        LOG_INFO(LOG_MODULE, "session cmd '%s' shipped gen=%u rc=%d%s", type, (unsigned)gen, rc, ap_status(rc));
     }
 done:
     if (pk && cf_rel) cf_rel(pk);
@@ -2471,16 +2473,16 @@ static int alt_send_cluster_night_mode(uint32_t gen, int night, const char *reas
 {
     void *p = alt_params_new(1);
     int rc;
-    if (!p) return -6728;
+    if (!p) return kNoMemoryErr;
     if (set_i64(p, "nightMode", night ? 1 : 0) != 0) {
         cf_rel(p);
-        return -6728;
+        return kNoMemoryErr;
     }
     rc = alt_ship(gen, "setNightMode", p);
     LOG_INFO(LOG_MODULE,
-             "alt: cluster nightMode=%d uuid=%s reason=%s rc=%d",
+             "alt: cluster nightMode=%d uuid=%s reason=%s rc=%d%s",
              night ? 1 : 0, CLUSTER_DISPLAY_UUID,
-             reason ? reason : "?", rc);
+             reason ? reason : "?", rc, ap_status(rc));
     return rc;
 }
 
@@ -2497,14 +2499,14 @@ HOOK_EXPORT int AirPlayReceiverSessionSetNightMode(void *session, int night,
 {
     static fn_sess_set_night_t real;
     int rc;
-    int clusterRc = -6735;
+    int clusterRc = kUnsupportedErr;
 
     if (!real)
         real = (fn_sess_set_night_t)dlsym(RTLD_NEXT,
                                           "AirPlayReceiverSessionSetNightMode");
     if (!real) {
         LOG_ERROR(LOG_MODULE, "SetNightMode real==NULL");
-        return -6740;
+        return kBadReferenceErr;
     }
 
     g_alt_night_mode = night ? 1 : 0;
@@ -2518,8 +2520,8 @@ HOOK_EXPORT int AirPlayReceiverSessionSetNightMode(void *session, int night,
     }
 
     LOG_INFO(LOG_MODULE,
-             "AirPlayReceiverSessionSetNightMode night=%d stock_rc=%d cluster_rc=%d",
-             g_alt_night_mode, rc, clusterRc);
+             "AirPlayReceiverSessionSetNightMode night=%d stock_rc=%d%s cluster_rc=%d%s",
+             g_alt_night_mode, rc, ap_status(rc), clusterRc, ap_status(clusterRc));
     return rc; /* a cluster-only failure must never break stock main CarPlay */
 }
 
@@ -2551,8 +2553,8 @@ static void zoom_on_cmd(uint16_t type, uint8_t flags, const uint8_t *payload, ui
     if (env_on("ALTSCREEN_ZOOM_INVERT"))
         step = -step;
     rc = alt_command_zoom(0, step);
-    LOG_INFO(LOG_MODULE, "cluster zoom step=%d scheduled rc=%d uuid=%s", step, rc,
-             CLUSTER_DISPLAY_UUID);
+    LOG_INFO(LOG_MODULE, "cluster zoom step=%d scheduled rc=%d%s uuid=%s", step, rc,
+             ap_status(rc), CLUSTER_DISPLAY_UUID);
 }
 
 /* Stock 210 AirPlayReceiverSessionForceKeyFrame sends only
@@ -2567,8 +2569,8 @@ static int alt_send_cluster_idr_raw(uint32_t gen, const char *reason)
     void *p = alt_params_new(1);
     void *cmd = NULL;
     void *pk = NULL;
-    int rc = -6728;
-    if (!p) return -6728;
+    int rc = kNoMemoryErr;
+    if (!p) return kNoMemoryErr;
     cmd = cf_dictm(0, 0, dict_keycb, dict_valcb);
     if (cmd) {
         if (set_str(cmd, "type", "forceKeyFrame") != 0) goto done;
@@ -2582,8 +2584,8 @@ done:
     if (cmd && cf_rel) cf_rel(cmd);
     if (cf_rel) cf_rel(p);
     LOG_INFO(LOG_MODULE,
-             "alt: cluster forceKeyFrame uuid=%s reason=%s rc=%d",
-             CLUSTER_DISPLAY_UUID, reason ? reason : "?", rc);
+             "alt: cluster forceKeyFrame uuid=%s reason=%s rc=%d%s",
+             CLUSTER_DISPLAY_UUID, reason ? reason : "?", rc, ap_status(rc));
     return rc;
 }
 
@@ -2604,8 +2606,8 @@ static void alt_kick_viewarea(uint32_t gen)
 {
     int mode = alt_zone_mode_get();
     int rc = zone_send_mode(gen, mode, 0, NULL);
-    LOG_INFO(LOG_MODULE, "alt: initial updateViewArea mode=%s rc=%d",
-             alt_zone_name(mode), rc);
+    LOG_INFO(LOG_MODULE, "alt: initial updateViewArea mode=%s rc=%d%s",
+             alt_zone_name(mode), rc, ap_status(rc));
 }
 
 /* Cluster scene URL (DashBoard -[DBInstrumentClusterURLHandler applySettingsForClusterURL:
@@ -2649,18 +2651,18 @@ static int alt_show_ui_for_mode(uint32_t gen, int mode, const char *reason)
         LOG_INFO(LOG_MODULE,
                  "alt: showUI skipped (no committed altScreen generation) reason=%s",
                  reason ? reason : "?");
-        return -6735;
+        return kUnsupportedErr;
     }
     void *p = alt_params_new(1);                        /* uuid = cluster display */
-    if (!p) return -6728;
+    if (!p) return kNoMemoryErr;
     if (set_str(p, "url", url) != 0) {
         cf_rel(p);
-        return -6728;
+        return kNoMemoryErr;
     }
     int rc = alt_ship(gen, "showUI", p);
-    LOG_INFO(LOG_MODULE, "alt: showUI mode=%s rgi=%d reason=%s uuid=%s url=%s rc=%d",
+    LOG_INFO(LOG_MODULE, "alt: showUI mode=%s rgi=%d reason=%s uuid=%s url=%s rc=%d%s",
              alt_zone_name(mode), (int)alt_rgi_active_get(),
-             reason ? reason : "?", CLUSTER_DISPLAY_UUID, url, rc);
+             reason ? reason : "?", CLUSTER_DISPLAY_UUID, url, rc, ap_status(rc));
     return rc;
 }
 
@@ -2711,8 +2713,8 @@ static void rgi_on_cmd(uint16_t type, uint8_t flags, const uint8_t *payload, uin
     if (active == alt_rgi_active_get()) return;
     alt_rgi_active_set(active);
     int rc = alt_show_ui_for_mode(0, alt_zone_mode_get(), "rgi-edge");
-    LOG_WARN(LOG_MODULE, "alt: RGI presentation=%d -> cluster url %s rc=%d",
-             active, alt_cluster_url(), rc);
+    LOG_WARN(LOG_MODULE, "alt: RGI presentation=%d -> cluster url %s rc=%d%s",
+             active, alt_cluster_url(), rc, ap_status(rc));
 }
 
 static void alt_forward_failed(uint32_t gen, void *context)

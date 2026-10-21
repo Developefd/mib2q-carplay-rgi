@@ -3,6 +3,7 @@
  */
 #ifndef ALTSCREEN_COMMAND_WORKER_H
 #define ALTSCREEN_COMMAND_WORKER_H
+#include "../framework/ap_status.h"
 static void alt_command_dispose(alt_cmd_item_t *item, int status, int notify) {
     if (notify && item->completion) {
         void (*done)(int, void *, void *) = (void (*)(int, void *, void *))item->completion;
@@ -37,7 +38,7 @@ static uint64_t alt_command_env_ms(const char *name, unsigned fallback, unsigned
 }
 static int alt_dispatch_zoom(const alt_zoom_dispatch_t *dispatch) {
     void *params = alt_params_new(1), *cmd = NULL, *key = NULL, *session = NULL;
-    int valid, rc = -6728;
+    int valid, rc = kNoMemoryErr;
     if (!params)
         return rc;
     if (set_i64(params, "zoomDirection", dispatch->direction) != 0) {
@@ -56,7 +57,7 @@ static int alt_dispatch_zoom(const alt_zoom_dispatch_t *dispatch) {
          * No session lock is held at the final queue-policy check or SDK call. */
         session = alt_retain_session_for_gen(dispatch->gen);
         if (!session) {
-            rc = -6735;
+            rc = kUnsupportedErr;
             goto done;
         }
         pthread_mutex_lock(&g_alt_cmd_lock);
@@ -132,19 +133,19 @@ static void *alt_command_worker_main(void *unused) {
 static int alt_command_start_locked(void) {
     int rc;
     if (g_alt_cmd_shutdown)
-        return -6735;
+        return kUnsupportedErr;
     if (g_alt_cmd_created)
         return 0;
     rc = alt_condition_init(&g_alt_cmd_clock);
     if (rc)
-        return -6728;
+        return kNoMemoryErr;
     g_alt_commands.zoom_interval_us = alt_command_env_ms("ALTSCREEN_ZOOM_INTERVAL_MS", 50, 20, 100);
     g_alt_commands.zoom_tail_us = alt_command_env_ms("ALTSCREEN_ZOOM_TAIL_MS", 250, 100, 1000);
     g_alt_cmd_exited = 0;
     rc = pthread_create(&g_alt_cmd_thread, NULL, alt_command_worker_main, NULL);
     if (!rc)
         g_alt_cmd_created = 1;
-    return rc ? -6728 : 0;
+    return rc ? kNoMemoryErr : 0;
 }
 /* gen=0 snapshots the current session before admission, never at dispatch time.
  */
@@ -154,24 +155,24 @@ static int alt_send_async_for_gen_key(uint32_t gen, void *cmd, void *completion,
     unsigned count = 0, i;
     int rc, has_replaced = 0;
     if (!cmd || !cf_ret || !cf_rel)
-        return -6735;
+        return kUnsupportedErr;
     if (!gen)
         gen = alt_generation_for_session(NULL);
     if (!alt_generation_is_current(gen))
-        return -6735;
+        return kUnsupportedErr;
     item.gen = gen;
     item.cmd = cf_ret(cmd);
     item.completion = completion;
     item.ctx = ctx;
     item.key = key;
     if (!item.cmd)
-        return -6728;
+        return kNoMemoryErr;
     pthread_mutex_lock(&g_alt_cmd_lock);
     rc = alt_command_start_locked();
     if (!rc) {
         count = alt_command_generation(&g_alt_commands, gen, 1, retired);
         rc = alt_command_offer(&g_alt_commands, item, &replaced, &has_replaced);
-        rc = rc == -1 ? -6735 : rc == -2 ? -6729 : rc;
+        rc = rc == -1 ? kUnsupportedErr : rc == -2 ? kNoResourcesErr : rc;
     }
     pthread_cond_signal(g_alt_cmd_clock.active);
     pthread_mutex_unlock(&g_alt_cmd_lock);
@@ -190,13 +191,13 @@ static int alt_command_zoom(uint32_t gen, int steps) {
     if (!gen)
         gen = alt_generation_for_session(NULL);
     if (!alt_generation_is_current(gen))
-        return -6735;
+        return kUnsupportedErr;
     pthread_mutex_lock(&g_alt_cmd_lock);
     rc = alt_command_start_locked();
     if (!rc) {
         count = alt_command_generation(&g_alt_commands, gen, 1, retired);
         if (alt_zoom_offer(&g_alt_commands, gen, steps, alt_timing_now_us()) < 0)
-            rc = -6735;
+            rc = kUnsupportedErr;
     }
     pthread_cond_signal(g_alt_cmd_clock.active);
     pthread_mutex_unlock(&g_alt_cmd_lock);

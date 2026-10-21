@@ -53,10 +53,10 @@ HOOK_EXPORT int HTTPServerCreate(void **out_server, const void *delegate)
     uintptr_t copied[11];
     const char *mode = getenv("MHI2Q_DIO_OWNER_MODE");
     const char *enable = getenv("MHI2Q_CP_WIRELESS_PAIRING");
-    if (!real) return -6740;
+    if (!real) return kBadReferenceErr;
     if (!mode || strcmp(mode, "wireless") || !enable || strcmp(enable, "1") ||
         !slots || !cp210_matches((void *)real, (void *)slots[9])) return real(out_server, delegate);
-    if (hook_framework_init() != HOOK_OK) return -6740;
+    if (hook_framework_init() != HOOK_OK) return kBadReferenceErr;
     /* Module registration may have been denied by the build's VIN gate. */
     size_t i;
     int wanted = 0;
@@ -65,7 +65,7 @@ HOOK_EXPORT int HTTPServerCreate(void **out_server, const void *delegate)
         if (m && m->http.on_open) wanted = 1;
     }
     if (!wanted) return real(out_server, delegate);
-    if (stock_request && stock_request != (void *)slots[9]) return -6740;
+    if (stock_request && stock_request != (void *)slots[9]) return kBadReferenceErr;
     memcpy(copied, delegate, sizeof(copied));
     stock_open = (int (*)(void *))slots[6];
     stock_close = (void (*)(void *))slots[7];
@@ -96,7 +96,7 @@ HOOK_EXPORT int HTTPMessageReadMessage(int fd, void *message)
         if (m && m->http.on_read && m->http.on_read(fd, message, &result)) return result;
     }
     real = (read_fn)dlsym(RTLD_NEXT, "HTTPMessageReadMessage");
-    return real ? real(fd, message) : -6740;
+    return real ? real(fd, message) : kBadReferenceErr;
 }
 
 HOOK_EXPORT int SocketWriteData(int fd, struct iovec **vectors, int *count)
@@ -110,7 +110,7 @@ HOOK_EXPORT int SocketWriteData(int fd, struct iovec **vectors, int *count)
         if (m && m->http.on_write && m->http.on_write(fd, vectors, count, &result)) return result;
     }
     real = (write_fn)dlsym(RTLD_NEXT, "SocketWriteData");
-    result = real ? real(fd, vectors, count) : -6740;
+    result = real ? real(fd, vectors, count) : kBadReferenceErr;
     for (i = 0; i < hook_framework_module_count(); ++i) {
         const hook_module_def_t *m = hook_framework_module_at(i);
         if (m && m->http.on_write_done) result = m->http.on_write_done(fd, result);

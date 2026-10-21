@@ -16,10 +16,6 @@ DEFINE_LOG_MODULE(WMEDIA);
 #endif
 #define HISTORY 32
 #define FRAME_LIMIT (16u * 1024u * 1024u)
-#define ERR_STATE (-6709)
-#define ERR_PARAM (-6705)
-#define ERR_UNSUPPORTED (-6735)
-#define ERR_AUTH (-6754)
 
 enum { S_EVENT_CLIENT=704, S_MAIN=720, S_ALT=2896, S_SCREEN=5140,
        SCREEN_HEADER=72, SCREEN_AES_VALID=484, NET_READ=20 };
@@ -84,7 +80,7 @@ static void *key(const char *s) { return cf.string(NULL,s,0x08000100); }
 static void *get(void *dict,const char *name)
 { if(!dict || cf.type(dict)!=cf.dict_type())return NULL; void *k=key(name), *v=k?cf.get(dict,k):NULL; if(k)cf.release(k); return v; }
 static int64_t number(void *dict,const char *name,int *err)
-{ if(!dict || cf.type(dict)!=cf.dict_type()){if(err)*err=ERR_PARAM;return 0;} void *k=key(name); int64_t n=0; if(k){n=cf.integer(dict,k,err);cf.release(k);}else if(err)*err=ENOMEM; return n; }
+{ if(!dict || cf.type(dict)!=cf.dict_type()){if(err)*err=kParamErr;return 0;} void *k=key(name); int64_t n=0; if(k){n=cf.integer(dict,k,err);cf.release(k);}else if(err)*err=kNoMemoryErr; return n; }
 static void remove_key(void *dict,const char *name)
 { void *k=key(name); if(k){cf.remove(dict,k);cf.release(k);} }
 static void set_number(void *dict,const char *name,int64_t n)
@@ -108,18 +104,18 @@ int cp_media_normalize_setup(void *message)
     int err=0;
     void *dict, *data;
     pthread_once(&cf_once,resolve_cf);
-    if(!cf.ready)return ERR_UNSUPPORTED;
+    if(!cf.ready)return kUnsupportedErr;
     dict=cf.parse(cp210_ptr(message,CP210_MSG_BODY_PTR),cp210_get(message,CP210_MSG_BODY_OFFSET),
                   1,cf.dict_type(),&err);
-    if(!dict)return err?err:ERR_PARAM;
+    if(!dict)return err?err:kParamErr;
     /* Paired modern SETUP has no legacy MFi-SAP AES envelope. The stock
      * dispatcher sees the same request except for its obsolete AES fields. */
     remove_key(dict,"et"); remove_key(dict,"ekey"); remove_key(dict,"eiv");
     data=cf.serialize(NULL,dict,200,0,NULL);
-    if(!data)err=ERR_PARAM;
+    if(!data)err=kParamErr;
     else {
         long n=cf.length(data);
-        if(n<0 || n>CP_PAIR_BODY_MAX)err=ERR_PARAM;
+        if(n<0 || n>CP_PAIR_BODY_MAX)err=kParamErr;
         else {
             /* Preserve parsed URL/header pointers and pipelined extra bytes.
              * Only this dispatch's in-memory plist is replaced. */
@@ -147,11 +143,11 @@ static int slot_for(int type) {
 #ifdef MHI2Q_WIRELESS_ALT_QEMU
 int cp_media_alt_claim(void *session, uint64_t connection_id, uint8_t key[32])
 {
-    int err=ERR_STATE;
+    int err=kStateErr;
     struct media_session *m;
-    if(!key)return ERR_PARAM;
+    if(!key)return kParamErr;
     erase(key,32);
-    if(!cp_media_alt_available())return ERR_UNSUPPORTED;
+    if(!cp_media_alt_available())return kUnsupportedErr;
     pthread_mutex_lock(&media_lock);
     m=find_session(session);
     if(m && !m->retired && m->streams[3].active && !m->streams[3].failed &&
@@ -181,12 +177,12 @@ int cp_media_prepare(void *owner,void *session,void *request,cp_pair_connection 
     unsigned j;
     int err=0, fresh=0;
     pthread_once(&cf_once,resolve_cf);
-    if(!cf.ready || !cp_pair_is_encrypted(pair))return ERR_STATE;
+    if(!cf.ready || !cp_pair_is_encrypted(pair))return kStateErr;
     pthread_mutex_lock(&media_lock);
     m=find_session(session);
-    if(!m)for(j=0;j<SESSIONS;++j)if(sessions[j].owner==owner){err=ERR_STATE;goto exit;}
+    if(!m)for(j=0;j<SESSIONS;++j)if(sessions[j].owner==owner){err=kStateErr;goto exit;}
     if(!m){for(j=0;j<SESSIONS;++j)if(!sessions[j].owner){m=&sessions[j];break;}fresh=1;}
-    if(!m || m->retired){err=ERR_STATE;goto exit;}
+    if(!m || m->retired){err=kStateErr;goto exit;}
     pending=*m;
     if(fresh){
         pending.owner=owner;pending.session=session;
@@ -195,26 +191,26 @@ int cp_media_prepare(void *owner,void *session,void *request,cp_pair_connection 
         if(err)goto exit;
     }
     array=stream_array(request);
-    if(get(request,"streams") && !array){err=ERR_PARAM;goto exit;}
+    if(get(request,"streams") && !array){err=kParamErr;goto exit;}
     count=array?cf.count(array):0;
-    if(count<0 || count>STREAMS){err=ERR_UNSUPPORTED;goto exit;}
+    if(count<0 || count>STREAMS){err=kUnsupportedErr;goto exit;}
     for(i=0;i<count;++i){
         void *desc=cf.at(array,i);
-        if(!desc || cf.type(desc)!=cf.dict_type()){err=ERR_PARAM;goto exit;}
+        if(!desc || cf.type(desc)!=cf.dict_type()){err=kParamErr;goto exit;}
         int type=(int)number(desc,"type",&err), slot=slot_for(type);
-        if(err || slot<0){err=ERR_UNSUPPORTED;goto exit;}
+        if(err || slot<0){err=kUnsupportedErr;goto exit;}
         struct media_stream *s=&pending.streams[slot];
-        if(s->active || pending.used_count==HISTORY){err=ERR_STATE;goto exit;}
+        if(s->active || pending.used_count==HISTORY){err=kStateErr;goto exit;}
         uint64_t id=(uint64_t)number(desc,"streamConnectionID",&err);
-        if(err || !id){err=ERR_PARAM;goto exit;}
-        for(j=0;j<pending.used_count;++j)if(pending.used[j]==id){err=ERR_STATE;goto exit;}
+        if(err || !id){err=kParamErr;goto exit;}
+        for(j=0;j<pending.used_count;++j)if(pending.used[j]==id){err=kStateErr;goto exit;}
         if(type!=110 && type!=111){
             uint64_t format=(uint64_t)number(desc,"audioFormat",&err);
             /* Target worker always swaps 16-bit PCM. No compressed or 24-bit paths. */
             uint64_t pcm16=0;
             for(j=2;j<=11;++j)pcm16|=UINT64_C(1)<<j;
             pcm16|=(UINT64_C(1)<<14)|(UINT64_C(1)<<15);
-            if(err || !format || (format&(format-1)) || !(format&pcm16)) {err=ERR_UNSUPPORTED;goto exit;}
+            if(err || !format || (format&(format-1)) || !(format&pcm16)) {err=kUnsupportedErr;goto exit;}
         }
         memset(s,0,sizeof(*s));s->type=type;s->id=id;s->active=1;
         err=derive_stream(pair,s);if(err)goto exit;
@@ -224,7 +220,7 @@ int cp_media_prepare(void *owner,void *session,void *request,cp_pair_connection 
 exit:
     erase(&pending,sizeof(pending));
     pthread_mutex_unlock(&media_lock);
-    if(err)LOG_WARN(LOG_MODULE,"SETUP crypto rejected status=%d",err);
+    if(err)LOG_WARN(LOG_MODULE,"SETUP crypto rejected status=%d%s",err,ap_status(err));
     return err;
 }
 void cp_media_setup_response(hook_setup_ctx_t *setup)
@@ -279,7 +275,7 @@ HOOK_EXPORT int HTTPClientCreateWithSocket(void **out,int fd)
     uint8_t r[32],w[32];
     unsigned i;
     int matched=0,err;
-    if(!real)return ERR_UNSUPPORTED;
+    if(!real)return kUnsupportedErr;
     pthread_mutex_lock(&media_lock);
     for(i=0;i<SESSIONS;++i)if(sessions[i].owner && !sessions[i].retired &&
         (uint8_t *)out==(uint8_t *)sessions[i].session+S_EVENT_CLIENT){
@@ -289,7 +285,7 @@ HOOK_EXPORT int HTTPClientCreateWithSocket(void **out,int fd)
     if(!matched)return real(out,fd);
     pthread_mutex_lock(&event_lock);
     for(i=0;i<SESSIONS;++i)if(!events[i].used)break;
-    err=i==SESSIONS?ENOMEM:cp_pair_transport_create(fd,r,w,&events[i].transport);
+    err=i==SESSIONS?kNoResourcesErr:cp_pair_transport_create(fd,r,w,&events[i].transport);
     erase(r,32);erase(w,32);
     if(!err){events[i].used=1;events[i].fd=fd;}
     pthread_mutex_unlock(&event_lock);
@@ -361,29 +357,29 @@ static int screen_read(void *net,size_t min,size_t max,void *buffer,size_t *leng
     for(i=0;i<SESSIONS;++i)if(readers[i] && readers[i]->net==net){r=readers[i];break;}
     pthread_mutex_unlock(&media_lock);
     if(length)*length=0;
-    if(!r || min!=max)return ERR_STATE;
+    if(!r || min!=max)return kStateErr;
     if(!r->body){
-        if(max!=sizeof(r->aad))return ERR_STATE;
+        if(max!=sizeof(r->aad))return kStateErr;
         err=r->real(net,min,max,buffer,&got,flags,timeout);if(err)return err;
-        if(got!=max)return ERR_STATE;
+        if(got!=max)return kStateErr;
         memcpy(r->aad,buffer,sizeof(r->aad));
         r->body=cp210_get(buffer,0);r->encrypted=r->aad[4]==0;
-        if(r->body>FRAME_LIMIT || (r->encrypted && r->body<=16))return ERR_PARAM;
+        if(r->body>FRAME_LIMIT || (r->encrypted && r->body<=16))return kParamErr;
         if(r->encrypted){r->body-=16;cp210_set(buffer,0,(uint32_t)r->body);}
         if(length)*length=max;
         return 0;
     }
-    if(max!=r->body)return ERR_STATE;
+    if(max!=r->body)return kStateErr;
     err=r->real(net,min,max,buffer,&got,flags,timeout);if(err)return err;
-    if(got!=max)return ERR_STATE;
+    if(got!=max)return kStateErr;
     if(r->encrypted){
         uint8_t tag[16],nonce[8];
-        if(r->nonce==UINT64_MAX)return ERR_STATE;
+        if(r->nonce==UINT64_MAX)return kStateErr;
         err=r->real(net,16,16,tag,&got,flags,timeout);if(err)return err;
-        if(got!=16)return ERR_STATE;
+        if(got!=16)return kStateErr;
         nonce_bytes(r->nonce,nonce);
         err=cp_pair_open(r->key,nonce,r->aad,128,buffer,max,tag,buffer);
-        if(err){LOG_WARN(LOG_MODULE,"screen authentication rejected");return ERR_AUTH;}
+        if(err){LOG_WARN(LOG_MODULE,"screen authentication rejected");return kAuthenticationErr;}
         ++r->nonce;
     }
     r->body=0;
@@ -396,23 +392,23 @@ HOOK_EXPORT int AirPlayReceiverSessionScreen_SetSecurityInfo(void *screen,const 
     fn real=(fn)dlsym(RTLD_NEXT,"AirPlayReceiverSessionScreen_SetSecurityInfo");
     int matched;
     pthread_mutex_lock(&media_lock);matched=screen_stream(screen)!=NULL;pthread_mutex_unlock(&media_lock);
-    if(!matched)return real?real(screen,key_bytes,iv):ERR_UNSUPPORTED;
+    if(!matched)return real?real(screen,key_bytes,iv):kUnsupportedErr;
     /* A fresh stock screen object must have no previously initialized AES. */
-    return ((uint8_t *)screen)[SCREEN_AES_VALID]?ERR_STATE:0;
+    return ((uint8_t *)screen)[SCREEN_AES_VALID]?kStateErr:0;
 }
 HOOK_EXPORT int AirPlayReceiverSessionScreen_ProcessFrames(void *screen,void *net,int timeout)
 {
     typedef int (*fn)(void *,void *,int);
     fn real=(fn)dlsym(RTLD_NEXT,"AirPlayReceiverSessionScreen_ProcessFrames");
     struct screen_reader r;unsigned i;int result;
-    if(!real)return ERR_UNSUPPORTED;
+    if(!real)return kUnsupportedErr;
     memset(&r,0,sizeof(r));
     pthread_mutex_lock(&media_lock);
     struct media_stream *stream=screen_stream(screen);
     if(!stream){pthread_mutex_unlock(&media_lock);return real(screen,net,timeout);}
-    if(stream->failed){pthread_mutex_unlock(&media_lock);return ERR_AUTH;}
+    if(stream->failed){pthread_mutex_unlock(&media_lock);return kAuthenticationErr;}
     for(i=0;i<SESSIONS;++i)if(!readers[i])break;
-    if(i==SESSIONS){pthread_mutex_unlock(&media_lock);return ERR_STATE;}
+    if(i==SESSIONS){pthread_mutex_unlock(&media_lock);return kStateErr;}
     r.net=net;r.real=(net_read_fn)cp210_ptr(net,NET_READ);
     memcpy(r.key,stream->read_key,32);r.nonce=stream->receive_nonce;
     readers[i]=&r;cp210_set(net,NET_READ,(uint32_t)(uintptr_t)screen_read);
@@ -444,7 +440,7 @@ HOOK_EXPORT int SocketRecvFrom(int fd,void *buffer,size_t capacity,size_t *lengt
     typedef int (*fn)(int,void *,size_t,size_t *,void *,size_t,size_t *,uint64_t *,uint32_t *,char *);
     fn real=(fn)dlsym(RTLD_NEXT,"SocketRecvFrom");
     int err;uint8_t *packet=buffer;
-    if(!real)return ERR_UNSUPPORTED;
+    if(!real)return kUnsupportedErr;
     err=real(fd,buffer,capacity,length,from,from_max,from_len,ticks,ifindex,ifname);
     if(err)return err;
     pthread_mutex_lock(&media_lock);
@@ -454,7 +450,7 @@ HOOK_EXPORT int SocketRecvFrom(int fd,void *buffer,size_t capacity,size_t *lengt
         size_t n=length?*length:0;
         unsigned frame_bytes=cp210_get(ctx,1600);
         if(n<=36 || n>capacity || packet[0]!=0x80 || !frame_bytes ||
-            (n-36)%frame_bytes)err=ERR_PARAM;
+            (n-36)%frame_bytes)err=kParamErr;
         else {
             /* Modern iOS (OS build >13A1): timestamp+SSRC are the AAD. */
             err=cp_pair_open(s->read_key,packet+n-8,packet+4,8,packet+12,n-36,packet+n-24,packet+12);

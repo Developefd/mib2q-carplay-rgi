@@ -2,6 +2,7 @@
 #define MHI2Q_PAIRED_SCREEN_CRYPTO_H
 #include <stdint.h>
 #include <stddef.h>
+#include "../framework/ap_status.h"
 typedef int (*cp_screen_open_fn)(const uint8_t *, const uint8_t *, const void *, size_t,
                                 const void *, size_t, const uint8_t *, void *);
 /* One fresh TCP stream consumes one claimed key; failed streams never resume.
@@ -16,8 +17,8 @@ static inline int cp_screen_open(cp_screen_crypto *state, const uint8_t key[32],
     uint32_t wire_length;
     unsigned i;
     int err;
-    if (!state) return -6705;
-    if (state->failed) return -6754;
+    if (!state) return kParamErr;
+    if (state->failed) return kAuthenticationErr;
     if (!key || !header || !body || !length || !open || state->nonce == UINT64_MAX) goto invalid;
     wire_length=(uint32_t)header[0] | (uint32_t)header[1]<<8 |
         (uint32_t)header[2]<<16 | (uint32_t)header[3]<<24;
@@ -30,6 +31,6 @@ static inline int cp_screen_open(cp_screen_crypto *state, const uint8_t key[32],
     return 0;
 invalid:
     state->failed=1;
-    return -6705;
+    return kParamErr;
 }
 #endif

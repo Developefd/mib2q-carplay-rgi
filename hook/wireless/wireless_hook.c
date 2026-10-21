@@ -47,7 +47,7 @@ static void wireless_init(void)
     err = cp_pair_store_open(directory, &store);
     enabled = err == 0;
     pthread_mutex_unlock(&lock);
-    if (err) LOG_ERROR(LOG_MODULE, "pairing store unavailable status=%d", err);
+    if (err) LOG_ERROR(LOG_MODULE, "pairing store unavailable status=%d%s", err, ap_status(err));
     else LOG_WARN(LOG_MODULE, "stock210 pairing store ready; receiver readiness awaits guarded HTTP/media");
 }
 
@@ -153,9 +153,9 @@ HOOK_EXPORT int carplay_wireless_copy_pairing_identity(char *id, size_t capacity
 static int wireless_open(void *http)
 {
     size_t i;
-    int err = -6728;
+    int err = kNoMemoryErr;
     pthread_mutex_lock(&lock);
-    if (!enabled) { pthread_mutex_unlock(&lock); return -6740; }
+    if (!enabled) { pthread_mutex_unlock(&lock); return kBadReferenceErr; }
     for (i = 0; i < CONNECTIONS; ++i) if (!connections[i].http) {
         err = cp_pair_connection_create(store, &connections[i].pair);
         if (!err) {
@@ -207,7 +207,7 @@ static int respond(void *http, void *request, int status, const void *body, size
     uint8_t *header = (uint8_t *)response + CP210_MSG_HEADER;
     unsigned int seq;
     int err;
-    if (!init || !set_body || !field || !scan || !send_response) return -6740;
+    if (!init || !set_body || !field || !scan || !send_response) return kBadReferenceErr;
     err = init(header, "HTTP/1.1", status, NULL);
     if (!err) err = set_body(response, "application/pairing+tlv8", body, length);
     if (!err) err = field(header, "Server", "%s", "AirTunes/210.81");
@@ -239,7 +239,7 @@ static int wireless_request(void *http, void *message, int *result)
                 pthread_mutex_unlock(&lock);
                 return 1;
             }
-            int media_err = cp_media_enabled() ? cp_media_normalize_setup(message) : -6735;
+            int media_err = cp_media_enabled() ? cp_media_normalize_setup(message) : kUnsupportedErr;
             if (!media_err) { pthread_mutex_unlock(&lock); return 0; }
             *result = respond(http, message, 461, NULL, 0);
             pthread_mutex_unlock(&lock);
@@ -257,7 +257,7 @@ static int wireless_request(void *http, void *message, int *result)
     else {
         err = cp_pair_exchange(c->pair, verify, cp210_ptr(message, CP210_MSG_BODY_PTR),
                                cp210_get(message, CP210_MSG_BODY_OFFSET), &output, &length, &done);
-        if (err) LOG_WARN(LOG_MODULE, "pairing exchange failed verify=%d status=%d", verify, err);
+        if (err) LOG_WARN(LOG_MODULE, "pairing exchange failed verify=%d status=%d%s", verify, err, ap_status(err));
         status = err ? 400 : 200;
         if (!err && verify && done) c->commit_pending = 1;
     }
@@ -328,7 +328,7 @@ static void wireless_setup(hook_setup_ctx_t *setup)
     pthread_mutex_lock(&lock);
     /* Never normalize a paired SETUP and then silently run legacy media if
      * the guarded stock context cannot be associated with its verifier. */
-    setup->result = -6709;
+    setup->result = kStateErr;
     for (i = 0; i < CONNECTIONS; ++i) {
         struct connection *c = &connections[i];
         void *context = c->http ? cp210_ptr(c->http, 8) : NULL;

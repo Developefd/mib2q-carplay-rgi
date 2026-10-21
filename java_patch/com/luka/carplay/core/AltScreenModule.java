@@ -291,7 +291,7 @@ public final class AltScreenModule implements Module, CarplayBus.Listener {
                        | ((payload[3] & 0xff) << 16)
                        | ((payload[4] & 0xff) << 24);
             Log.i(TAG, "viewArea ack mode=" + viewAreaName(mode)
-                + " status=" + status);
+                + " status=" + status + ApStatus.suffix(status));
         }
     }
 

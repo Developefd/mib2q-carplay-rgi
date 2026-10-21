@@ -464,7 +464,7 @@ HOOK_EXPORT uint32_t AirPlayAudioFormatToASBD(uint64_t fmt, uint32_t *asbd, uint
 
     static fn_fmt_to_asbd_t real;
     if (!real) real = (fn_fmt_to_asbd_t)dlsym(RTLD_NEXT, "AirPlayAudioFormatToASBD");
-    if (!real) { LOG_ERROR(LOG_MODULE, "AirPlayAudioFormatToASBD real==NULL"); return (uint32_t)-6735; }
+    if (!real) { LOG_ERROR(LOG_MODULE, "AirPlayAudioFormatToASBD real==NULL"); return (uint32_t)kUnsupportedErr; }
     return real(fmt, asbd, bits_out);
 }
 
@@ -4118,7 +4118,7 @@ HOOK_EXPORT int AudioStreamPrepare(void *stream)
     int32_t audioType = 0;
     int mainAudio, added = 0, result;
     if (!real) real = (int (*)(void *))dlsym(RTLD_NEXT, "AudioStreamPrepare");
-    if (!real) return -6740;
+    if (!real) return kBadReferenceErr;
     mainAudio = spa_stock_main_audio_type(stream, &audioType);
     if (mainAudio) added = spa_stock_main_audio_begin(stream, audioType, "prepare");
     result = real(stream); /* never hold ioLock through HMI ACK / QSA re-entry */
@@ -7353,7 +7353,7 @@ static int spa103_http_process(void *connection, void *request)
     int status = 200;
 
     if (!profile || !request || !connection || !spa103_original_http_process)
-        return -6714;
+        return kNotHandledErr;
 
     method = *(const uint8_t * const *)((const uint8_t *)request +
                                          profile->httpMethodPointerOffset);
@@ -7543,7 +7543,7 @@ HOOK_EXPORT int AirTunesServer_EnsureCreated(void)
             dlsym(RTLD_NEXT, "AirTunesServer_EnsureCreated");
     if (!real_ensure_created) {
         LOG_ERROR(LOG_MODULE, "buffer103: stock AirTunesServer_EnsureCreated unavailable");
-        return -6735;
+        return kUnsupportedErr;
     }
 
     err = real_ensure_created();
@@ -8304,11 +8304,11 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
     int soundCheckTargetDb = 0;
     uint32_t generation = 0;
     int audioBufferSize, family, port = 0;
-    int sock = -1, err = -6728;
+    int sock = -1, err = kNoMemoryErr;
     int started = 0;
 
     if (!profile || !session || !request || !response || !spa_probe103() ||
-        !spa_cf_resolve() || !spa103_resolve()) return -6714;
+        !spa_cf_resolve() || !spa103_resolve()) return kNotHandledErr;
     streamDesc = spa_find_setup_stream(request, SPA_103_STREAM_TYPE);
     if (!streamDesc) return 0;
     audioBufferSize = spa103_audio_buffer_size(streamDesc);
@@ -8318,7 +8318,7 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
         streamDesc, &soundCheckMediaKind, &soundCheckTargetDb);
     if (!spa103_validate_setup_stream(streamDesc, formatIndex, haveKey)) {
         memset(shk, 0, sizeof(shk));
-        return -6714;
+        return kNotHandledErr;
     }
 
     /* Snapshot before any stop/join, model load, decoder creation or socket
@@ -8401,17 +8401,17 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
      * 6033/RTCP payload. AirTunesServer_EnsureCreated installed the dispatcher before that
      * connection was accepted; re-check its fingerprinted slot before publishing this SETUP. */
     if (!spa103_install_buffered_dispatcher()) {
-        err = -6735;
+        err = kUnsupportedErr;
         goto fail;
     }
 
     responseDesc = cfa_dictm(0, 0, cfa_dk_cb, cfa_dv_cb);
-    if (!responseDesc) { err = -6728; goto fail; }
+    if (!responseDesc) { err = kNoMemoryErr; goto fail; }
     if (spa103_response_set_i64(responseDesc, "type", SPA_103_STREAM_TYPE) != 0 ||
         spa103_response_set_i64(responseDesc, "dataPort", port) != 0 ||
         spa103_response_set_i64(responseDesc, "audioBufferSize", audioBufferSize) != 0 ||
         spa103_response_set_i64(responseDesc, "arrivalToRenderLatencyMs", latencyMs) != 0) {
-        err = -6728;
+        err = kNoMemoryErr;
         goto fail;
     }
     if (supportsDynamicStreamID) {
@@ -8420,13 +8420,13 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
         streamID = ((uint64_t)sequence << 32) | (uint64_t)generation;
         if (!streamID) streamID = 1;
         if (spa103_response_set_i64(responseDesc, "streamID", (int64_t)streamID) != 0) {
-            err = -6728;
+            err = kNoMemoryErr;
             goto fail;
         }
     }
 
     threadArg = (spa103_thread_arg_t *)calloc(1, sizeof(*threadArg));
-    if (!threadArg) { err = -6728; goto fail; }
+    if (!threadArg) { err = kNoMemoryErr; goto fail; }
     threadArg->generation = generation;
     threadArg->sequence = sequence;
     threadArg->listenSock = sock;
@@ -8437,7 +8437,7 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
         spa103_receiver.generation != generation || spa103_receiver.stop ||
         !spa103_receiver.settingUp || spa103_receiver.session != session) {
         pthread_mutex_unlock(&spa103_lock);
-        err = -6719;
+        err = kAlreadyInitializedErr;
         goto fail;
     }
     spa103_receiver.listenSock = sock;
@@ -8451,10 +8451,10 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
         LOG_ERROR(LOG_MODULE, "buffer103: failed to create APAP receiver thread errno=%d", errno);
     }
     pthread_mutex_unlock(&spa103_lock);
-    if (!started) { err = -6728; goto fail; }
+    if (!started) { err = kNoMemoryErr; goto fail; }
 
     if (spa103_add_response_stream(response, responseDesc) != 0) {
-        err = -6728;
+        err = kNoMemoryErr;
         goto fail;
     }
     cfa_rel(responseDesc);
@@ -8463,7 +8463,7 @@ static int spa_setup_buffered_receiver(void *session, void *request, void *respo
     if (!spa103_setup_current_locked(session, sequence) ||
         spa103_receiver.generation != generation || spa103_receiver.stop) {
         pthread_mutex_unlock(&spa103_lock);
-        err = -6719;
+        err = kAlreadyInitializedErr;
         goto fail;
     }
     spa103_receiver.settingUp = 0;
@@ -8558,7 +8558,7 @@ HOOK_EXPORT void *AirPlayReceiverServerPlatformCopyProperty(void *server, int se
     uint32_t legacyMask;
 
     if (!real) real = (fn_copyprop_t)dlsym(RTLD_NEXT, "AirPlayReceiverServerPlatformCopyProperty");
-    if (!real) { LOG_ERROR(LOG_MODULE, "CopyProperty real==NULL"); if (outErr) *outErr = -6714; return 0; }
+    if (!real) { LOG_ERROR(LOG_MODULE, "CopyProperty real==NULL"); if (outErr) *outErr = kNotHandledErr; return 0; }
 
     result = real(server, sessionID, property, qualifier, outErr);
     if (!result || !property || !(spa_probe103_mode() & SPA_103_MODE_INFO) ||
@@ -8710,27 +8710,27 @@ static void spa_finalize_mainbuffered_contract(hook_setup_ctx_t *setup)
 
     if (!setup->session || !setup->request || !spa_cf_resolve()) return;
     requestKey = cfa_str(0, "features", SPA_CFENC_UTF8);
-    if (!requestKey) { setup->result = setup->result ? setup->result : -6728; return; }
+    if (!requestKey) { setup->result = setup->result ? setup->result : kNoMemoryErr; return; }
     proposed = cfa_dictget(setup->request, requestKey);
     cfa_rel(requestKey);
     if (!proposed) return; /* media SETUP must not retire the control contract */
     if (setup->result) goto commit;
-    if (!setup->response) { setup->result = -6728; goto commit; }
+    if (!setup->response) { setup->result = kNoMemoryErr; goto commit; }
     enabledKey = cfa_str(0, "enabledFeatures", SPA_CFENC_UTF8);
     featureToken = cfa_str(0, "mainBuffered", SPA_CFENC_UTF8);
-    if (!enabledKey || !featureToken) { setup->result = -6728; goto commit; }
+    if (!enabledKey || !featureToken) { setup->result = kNoMemoryErr; goto commit; }
     enabled = cfa_dictget(setup->response, enabledKey);
     accepted = spa_array_contains_value(enabled, featureToken);
     if (!accepted) goto commit;
     if (!spa_array_contains_value(proposed, featureToken) || !spa_probe103()) {
-        setup->result = -6714;
+        setup->result = kNotHandledErr;
         accepted = 0;
         goto commit;
     }
     infoKey = cfa_str(0, "mainBufferedInfo", SPA_CFENC_UTF8);
     infoValue = cfa_dictm(0, 0, cfa_dk_cb, cfa_dv_cb);
     if (!infoKey || !infoValue) {
-        setup->result = -6728;
+        setup->result = kNoMemoryErr;
         accepted = 0;
     }
 commit:
@@ -8839,7 +8839,7 @@ HOOK_EXPORT int AirPlayReceiverSessionControl(void *session, uint32_t flags, con
         real = (fn_session_control_t)dlsym(RTLD_NEXT, "AirPlayReceiverSessionControl");
     if (!real) {
         LOG_ERROR(LOG_MODULE, "probe103 control: AirPlayReceiverSessionControl real==NULL");
-        return -6714;
+        return kNotHandledErr;
     }
 
     commandText[0] = '\0';
@@ -8979,8 +8979,8 @@ HOOK_EXPORT int AirPlayReceiverSessionControl(void *session, uint32_t flags, con
 #if ENABLE_AUDIO_DIAGNOSTICS
     if (tracing) {
         LOG_WARN(LOG_MODULE,
-                 "probe103 control[%u]: <- command=%s result=%d response=%p",
-                 (unsigned)sequence, commandText, result,
+                 "probe103 control[%u]: <- command=%s result=%d%s response=%p",
+                 (unsigned)sequence, commandText, result, ap_status(result),
                  responseOut ? *responseOut : (void *)0);
         if (responseOut && *responseOut) {
             snprintf(path, sizeof(path), "/tmp/spatial_controlcmd_%u_response.bplist",

@@ -32,7 +32,7 @@ static int read_header(cp_pair_connection *pair, uint8_t *message)
     parse_fn parse = (parse_fn)dlsym(RTLD_NEXT, "HTTPHeader_Parse");
     uint8_t *header = message + CP210_MSG_HEADER;
     size_t used = cp210_get(message, CP210_MSG_HEADER_LENGTH), i, got;
-    if (!parse || used > 8192) return -6743;
+    if (!parse || used > 8192) return kSizeErr;
     for (;;) {
         size_t end = 0;
         if (used >= 4 && header[0] == '$') end = 4;
@@ -49,10 +49,10 @@ static int read_header(cp_pair_connection *pair, uint8_t *message)
             cp210_set(message, CP210_MSG_EXTRA_LENGTH, (uint32_t)(used - end));
             return 0;
         }
-        if (used == 8192) return -6743;
+        if (used == 8192) return kSizeErr;
         size_t extra = cp210_get(message, CP210_MSG_EXTRA_LENGTH);
         if (extra) {
-            if (extra > 8192 - used) return -6743;
+            if (extra > 8192 - used) return kSizeErr;
             memmove(header + used, cp210_ptr(message, CP210_MSG_EXTRA_PTR), extra);
             cp210_set(message, CP210_MSG_EXTRA_LENGTH, 0);
             got = extra;
@@ -60,7 +60,7 @@ static int read_header(cp_pair_connection *pair, uint8_t *message)
             got = 0;
             int err = cp_pair_read(pair, header + used, 8192 - used, &got);
             if (err) return err;
-            if (!got) return -6753;
+            if (!got) return kConnectionErr;
         }
         used += got;
         cp210_set(message, CP210_MSG_HEADER_LENGTH, (uint32_t)used);
@@ -78,16 +78,16 @@ int cp210_read_message(cp_pair_connection *pair, void *opaque)
         if (err) return err;
         size = cp210_get(message, CP210_MSG_CONTENT_LENGTH);
         if (cp210_get(message, CP210_MSG_CONTENT_LENGTH + 4) ||
-            size > cp210_get(message, CP210_MSG_BODY_LIMIT)) return -6743;
+            size > cp210_get(message, CP210_MSG_BODY_LIMIT)) return kSizeErr;
         length_fn set_length = (length_fn)dlsym(RTLD_NEXT, "HTTPMessageSetBodyLength");
-        if (!set_length) return -6740;
+        if (!set_length) return kBadReferenceErr;
         err = set_length(message, size);
         if (err) return err;
         message[CP210_MSG_HEADER_READ] = 1;
     }
     size = cp210_get(message, CP210_MSG_BODY_LENGTH);
     used = cp210_get(message, CP210_MSG_BODY_OFFSET);
-    if (used > size) return -6743;
+    if (used > size) return kSizeErr;
     extra = cp210_get(message, CP210_MSG_EXTRA_LENGTH);
     if (extra) {
         size_t take = extra < size - used ? extra : size - used;

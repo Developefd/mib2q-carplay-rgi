@@ -120,6 +120,10 @@ static inline void log_hexdump(log_level_t level, const char* module, const char
 
 #endif /* Logging or scoped trace writer. */
 
+/* CoreUtils OSStatus names and the ap_status() decoder that appends them to a
+ * log line.  Pulled in here so every translation unit that logs has both. */
+#include "ap_status.h"
+
 #if ENABLE_LOGGING
 
 /* Convenience macros for logging */

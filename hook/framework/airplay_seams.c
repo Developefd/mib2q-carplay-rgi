@@ -160,7 +160,7 @@ HOOK_EXPORT int AirPlayReceiverSessionSetup(void *session, void *request, void *
 
     seam_enter();
     if (!real) real = (fn_sess_setup_t)dlsym(RTLD_NEXT, "AirPlayReceiverSessionSetup");
-    if (!real) { LOG_ERROR(LOG_MODULE, "SessionSetup real==NULL"); return -6740; }
+    if (!real) { LOG_ERROR(LOG_MODULE, "SessionSetup real==NULL"); return kBadReferenceErr; }
 
     memset(&setup, 0, sizeof(setup));
     setup.session = session;
@@ -206,8 +206,9 @@ HOOK_EXPORT int AirPlayReceiverSessionSetup(void *session, void *request, void *
     realMs = (beginMs && realDoneMs >= beginMs) ? (unsigned long)(realDoneMs - beginMs) : 0;
     hookMs = (realDoneMs && doneMs >= realDoneMs) ? (unsigned long)(doneMs - realDoneMs) : 0;
     LOG_INFO(LOG_MODULE,
-             "STARTUP SETUP timing seq=%u real=%lums hook=%lums total=%lums ret=%d",
-             (unsigned)setup.sequence, realMs, hookMs, realMs + hookMs, setup.result);
+             "STARTUP SETUP timing seq=%u real=%lums hook=%lums total=%lums ret=%d%s",
+             (unsigned)setup.sequence, realMs, hookMs, realMs + hookMs,
+             setup.result, ap_status(setup.result));
     STATE_TRACE("AIRPLAY_SETUP_DONE",
                 "setup_seq=%u air_gen=%u setup_ordinal=%u result=%d "
                 "response=%d real_ms=%lu hook_ms=%lu",
