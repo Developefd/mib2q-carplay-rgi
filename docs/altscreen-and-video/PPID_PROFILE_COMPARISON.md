@@ -4,22 +4,26 @@ _2026-10-21 · installed CarExperienceAssets version 40; stock MU1316 firmware; 
 
 ---
 
-## 🧾 Publication status
+## 🧾 Current status and reading guide
 
-This document preserves the earlier laboratory and reverse-engineering record.
-Statements below about no HU deployment or unmeasured physical behavior refer
-to those research phases. The later always-enabled
-[Maps-30 hook](MAPS_30FPS_PROFILE.md) was deployed, and the subsequent
-[physical-HU measurement](WIRED_PERFORMANCE_2026-10-21.md) recorded 29.64 FPS
-arrival with both screens in motion and six-channel audio output active.
-That short sample does not establish long-run stability, final panel FPS or
-the physical phone's selected capability row. The original pre-patch HU PPID
-remains unverified by a wire capture.
+This report preserves the laboratory and reverse-engineering record. Later
+implementation and physical measurements have the following status:
 
-Paths under `build/` and references marked as local research sources identify
-retained local evidence; they are not shipped binaries or published helpers.
-The production implementation and measurements are documented in the two
-linked reports above.
+| Item | Status | Evidence |
+|---|---|---|
+| Maps-30 PPID hook | Deployed; always enabled when PPID is absent | [Production behavior](MAPS_30FPS_PROFILE.md) |
+| Physical AltScreen arrival | 29.64 FPS in the saved short session | [Performance report](WIRED_PERFORMANCE_2026-10-21.md) |
+| Concurrent workload | Both screens in motion; six-channel audio output | [Workload and CPU](WIRED_PERFORMANCE_2026-10-21.md#-simultaneous-workload) |
+| Original pre-patch PPID / effective phone profile | Not wire-captured / not read back | [Measurement limits](WIRED_PERFORMANCE_2026-10-21.md#-setup-activation-and-remaining-validation) |
+| Long-run stability / final panel FPS | Unverified | [Remaining validation](WIRED_PERFORMANCE_2026-10-21.md#-setup-activation-and-remaining-validation) |
+
+Statements about no HU deployment below refer to the specific laboratory
+experiments. Paths under `build/` and references marked as local research
+sources identify retained evidence or unpublished helpers.
+
+Read the [exact tested profile delta](#-exact-observed-comparison-for-the-tested-selector),
+[capability settings](#%EF%B8%8F-other-interesting-capability-settings)
+and [complete 90-PPID / 97-rule table](#-complete-ppid-rule-table).
 
 ## 📋 What is original, and what was changed
 
@@ -99,8 +103,16 @@ case-insensitive PPID values**. Repeated PPIDs may require an additional
 firmware or display-size predicate. These are the complete feature keys
 present in those 97 rows of the installed version-40 asset:[^catalog]
 
-The per-PPID distribution is **85 with one rule, three with two rules, and
-two with three rules**. The repeated values are `e2c77d4b` (2), `6b0bb1d6`
+The per-PPID distribution is:
+
+| Rules per PPID | PPIDs | Associated rules |
+|---|---:|---:|
+| 1 | 85 | 85 |
+| 2 | 3 | 6 |
+| 3 | 2 | 6 |
+| Total | 90 | 97 |
+
+The repeated values are `e2c77d4b` (2), `6b0bb1d6`
 (2), `c7290754b340458f` (2), `5bec6cc28dd347d5` (3), and
 `fc8bc3fb0e104e52` (3). These are alternative matching records, not additive
 feature bundles. A 90-PPID summary (`build/wired-altscreen-30fps-re/ppid-effects/ppid-summary.csv`, local research source)
@@ -317,9 +329,9 @@ an original PPID. Adding a second PPID over an existing one would obscure
 the comparison.
 
 The existing Encode interception is the appropriate observation boundary.
-No production identity replacement or shared wireless change is made in this
-turn. Existing native A/B evidence is retained, and the catalog/consumer
-analysis is read-only. See the [complete mechanism](MAPS_FRAME_RATE_PROFILE_MECHANISM.md)
+The catalog/consumer investigation itself changed no production identity or
+wireless behavior. The later [production hook](MAPS_30FPS_PROFILE.md) adds
+PPID only when absent; original native A/B evidence is retained. See the [complete mechanism](MAPS_FRAME_RATE_PROFILE_MECHANISM.md)
 for profile-selection ambiguity, cache reversal and the source-rate controls.
 
 ## 📚 Complete PPID rule table

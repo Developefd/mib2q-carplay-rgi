@@ -2,27 +2,34 @@
 
 _2026-10-21 · native vphone 26.6.2 / 23G90, supplied 26.6 / 23G71 and 27.0 / 24A5418b binaries, 26.1 source comparison_
 
+---
+
 The [original identity and PPID feature comparison](PPID_PROFILE_COMPARISON.md)
 adds the complete installed PPID catalog, exact cached-profile delta, Siri/
 instrument consumers and the stock identity-composer investigation. The
 physical HU's original PPID remains unverified by a wire capture.
 
-## 🧾 Publication status
+## 🧾 Current status and reading guide
 
-This document preserves the earlier laboratory and reverse-engineering record.
-Statements below about no HU deployment or unmeasured physical behavior refer
-to those research phases. The later always-enabled
-[Maps-30 hook](MAPS_30FPS_PROFILE.md) was deployed, and the subsequent
-[physical-HU measurement](WIRED_PERFORMANCE_2026-10-21.md) recorded 29.64 FPS
-arrival with both screens in motion and six-channel audio output active.
-That short sample does not establish long-run stability, final panel FPS or
-the physical phone's selected capability row. The original pre-patch HU PPID
-remains unverified by a wire capture.
+This report preserves the laboratory and reverse-engineering record. Later
+implementation and physical measurements have the following status:
 
-Paths under `build/` and references marked as local research sources identify
-retained local evidence; they are not shipped binaries or published helpers.
-The production implementation and measurements are documented in the two
-linked reports above.
+| Item | Status | Evidence |
+|---|---|---|
+| Maps-30 PPID hook | Deployed; always enabled when PPID is absent | [Production behavior](MAPS_30FPS_PROFILE.md) |
+| Physical AltScreen arrival | 29.64 FPS in the saved short session | [Performance report](WIRED_PERFORMANCE_2026-10-21.md) |
+| Concurrent workload | Both screens in motion; six-channel audio output | [Workload and CPU](WIRED_PERFORMANCE_2026-10-21.md#-simultaneous-workload) |
+| Original pre-patch PPID / effective phone profile | Not wire-captured / not read back | [Measurement limits](WIRED_PERFORMANCE_2026-10-21.md#-setup-activation-and-remaining-validation) |
+| Long-run stability / final panel FPS | Unverified | [Remaining validation](WIRED_PERFORMANCE_2026-10-21.md#-setup-activation-and-remaining-validation) |
+
+Statements about no HU deployment below refer to the specific laboratory
+experiments. Paths under `build/` and references marked as local research
+sources identify retained evidence or unpublished helpers.
+
+Read the [wire representation](#wire-representation),
+[selection rules](#-profile-discovery-and-selection),
+[reconnection behavior](#-persistence-notification-and-reconnection)
+and [production integration](#%EF%B8%8F-hook-integration-boundary).
 
 ## 📋 Established behavior
 
@@ -60,13 +67,13 @@ sequenceDiagram
     hu->>acc: IdentificationInfo PPID string, parameter 34
     acc->>kit: EAAccessory.ppid in session configuration
     kit->>kit: Match installed CarPlayCapabilities.plist
-    kit->>kit: Persist vehicle capabilities under certificate-derived key
+    kit->>kit: Persist capabilities<br/>under certificate-derived key
     kit-->>maps: Capabilities Ready or Updated notification
     maps->>kit: CRFetchCarPlayCapabilities
     kit-->>maps: userInfo.mapsRefreshRate = 30
-    maps->>vk: setCarTargetFps(30) on active CarPlay map layers
+    maps->>vk: setCarTargetFps(30)<br/>on active CarPlay layers
     vk->>vk: Recompute display options, canvas and camera rate
-    Note over hu,vk: AirPlay maxFPS remains 30 throughout the controls
+    Note over hu,vk: AirPlay maxFPS remains 30<br/>throughout the laboratory controls
 ```
 
 ## 🔌 Accessory input and identity
@@ -384,9 +391,10 @@ profile, so an existing different value must not be silently appended as a
 duplicate. The bounded lab transformer (`tests/carplay_lab/vphone/car_capabilities.py`, local research source)
 rejects such a replacement; its bytes match the tested live payload.
 
-No default production identity replacement is enabled by this investigation.
-The wireless agent's transport/identity work is separate; native wireless
-integration and real-HU behavior are not inferred from the wired vphone run.
+The laboratory investigation did not deploy an identity change. The later
+[production hook](MAPS_30FPS_PROFILE.md) appends the selector only when PPID is
+absent and preserves existing values. The wireless transport/identity work is
+separate; wireless behavior is not inferred from the wired vphone controls.
 
 ## 📚 Evidence and remaining limits
 
@@ -395,12 +403,12 @@ distinguished. The actual guest's carkitd binary was read through the official
 guest API without changing system files; SHA-256 is
 `0ab494994ff07714554e938063c06aad41490226c88964d5162e6645796689a1`.
 Static extraction inputs retain their fingerprints in the earlier report and
-the mechanism artifacts. The 11 focused profile/selector tests pass.
+the mechanism artifacts. The recorded laboratory validation passed 11 focused profile/selector tests.
 
-Physical HU stability, final display cadence, actual Audi identity/profile
-collisions, and a physical iOS 27 asset/application combination remain to be
-measured. Neither the saved low CPU use nor mean presentation cost proves
-those outcomes. See the [measurement report](WIRED_30FPS_INVESTIGATION.md)
+The later physical session established near-30 arrival. Long-run stability,
+final display cadence, actual Audi identity/profile collisions and a physical
+iOS 27 asset/application combination remain unverified. Neither saved CPU
+use nor mean presentation cost establishes those outcomes. See the [measurement report](WIRED_30FPS_INVESTIGATION.md)
 for the baseline, source-rate controls and receiver candidate.
 
 [^controls]: `build/wired-altscreen-30fps-re/hook-fps-policy/{source-chain.json,capabilities30/summary.json,ppid34-only/summary.json,ppid34-only/decode-result.json,ppid34-only/journal.json}`; [measurement report](WIRED_30FPS_INVESTIGATION.md).
@@ -416,4 +424,4 @@ for the baseline, source-rate controls and receiver candidate.
 [^maps]: `hook-fps-policy/{maps-cap-read.asm,maps-apply-target.asm,maps-session-connect.asm,CarKit-config-init.asm,CarKit27-config-init.asm}`; `maps-profile-mechanism/{Maps266-task-init-body.asm,Maps266-active-carplay-mapviews.asm,Maps266-config-updated.asm}`. These Maps addresses refer to the supplied 23G71 executable; native policy readback is from the actual guest.
 [^vector]: `vphone-source-policy/{vector266-car-target.asm,vector266-policy.asm}`; `maps-profile-mechanism/{vector266-thermal-full.asm,vector266-fps-table.json,VectorKit27-symbols.txt,VectorKit27-set-car-target.asm}`. Supplied VectorKit 26.6 fingerprint and exact guest run-loop validation are retained in the measurement report.
 [^ios27]: Supplied `/Users/luka/Desktop/AUDI_2/Refferences/ios27_ff/24A5418b__iPhone18,1/usr/libexec/carkitd`; `maps-profile-mechanism/{carkitd27-objc.txt,carkitd27-set-session.asm,carkitd27-query-build.asm,carkitd27-query-key.asm,CarKit27-incache-objc.txt}`. ObjC query constructor is `0x100087cf8`, body `0x10008753c`; configuration-to-query PPID call is `0x1000879d4`.
-[^hook]: [Encode callback and checked array growth](../../hook/framework/hook_framework.c); [module callback interface](../../hook/framework/hook_framework.h). Existing source is shared and dirty; no framework behavior is changed by this analysis.
+[^hook]: [Encode callback and checked array growth](../../hook/framework/hook_framework.c); [module callback interface](../../hook/framework/hook_framework.h). The research used a shared working checkout; this document changes no framework behavior. See the production-hook report for the subsequently published callback.
