@@ -10,6 +10,13 @@ CarPlay can drive a **second display**: the Audi instrument cluster (Virtual Coc
 
 Read [AltScreen Cluster Video](ALTSCREEN_CLUSTER_VIDEO.md) first for the activation gate and the cluster wiring. Then read [Video Pipeline](VIDEO_PIPELINE.md) for the decode and delivery internals, [Cluster Loader](CLUSTER_LOADER.md) for the PRISM waiting animation, and [Reconnect and Lifecycle](RECONNECT_AND_LIFECYCLE.md) for replug behaviour. [Home](../README.md) is the hub and [Landmines](../LANDMINES.md) holds the trap list. Cluster route-guidance graphics, the *other* frame source in the same cluster context, are covered in [Cluster and RGI overview](../cluster-and-rgi/README.md).
 
+Latest physical-HU result (2026-10-21): wired AltScreen arrival averaged
+**29.64 FPS** across five 300-interval windows (28.68–30.00 FPS). The five
+measured processes together used about 83% of one core, equivalent to 20.8%
+of four-core capacity, with AltScreen in motion, the main screen in motion
+and 5.1 audio output playing simultaneously. See [wired performance measurements](WIRED_PERFORMANCE_2026-10-21.md)
+for CPU denominators, timing, evidence and the limits of this short sample.
+
 ## 📊 The whole path
 
 The 2026-10-06 source candidate adds shared recovery, idle EOF/status observation,
@@ -64,6 +71,8 @@ and input review resolutions, reproducible commands and latest result limits.
 | [AltScreen Input Commands](ALTSCREEN_INPUT_COMMANDS.md) | Canonical input path, paced zoom, reserved priority, state replacement, pre-commit/TTL cancellation, CF faults and runtime knobs. |
 | [AltScreen Pacing Validation](ALTSCREEN_PACING_VALIDATION.md) | Current startup/steady, HELLO/STATUS, clock and input-command contracts; 25 sanitizer scenarios, paced zoom, command priority/coalescing, test commands and hardware limits. |
 | [AltScreen Frame Rate](ALTSCREEN_FRAME_RATE.md) | Saved 20–27 fps evidence, sender/decoder/capture analysis, all six current pacing improvements, operation counts and offline validation limits. |
+| [Wired Performance — 2026-10-21](WIRED_PERFORMANCE_2026-10-21.md) | Physical-HU arrival rate near 30 FPS, CPU on one-core and four-core scales, stage timing, saved evidence and validation limits. |
+| [Stock Decoder Queue Patch](DECODER_QUEUE_PATCH.md) | Physical QNX symbol lookup/protection diagnosis, signature installation and rollback. |
 | [Maps 30 FPS Profile](MAPS_30FPS_PROFILE.md) | Always-enabled Identify PPID addition for the verified Maps-30 profile, identity-preserving fallback and native vphone evidence. |
 | [AltScreen RE History](ALTSCREEN_RE_HISTORY.md) | Every altScreen framing, gate theory, plan and verdict in order — what held and what was refuted. |
 | [Cluster Video Encoder](CLUSTER_VIDEO_ENCODER.md) | DisplayManager, `videoencoderservice` and stock KOMO: how a cluster context becomes the VC's H.264. |
@@ -75,6 +84,4 @@ and input review resolutions, reproducible commands and latest result limits.
 
 ## 💡 Truth levels
 
-Claims are tagged **[car]** for confirmed on the unit, **[decompile]** for reverse engineering, **[code]** for verified in the current source, and **[open]** for unverified. The earlier stream 111 path from decode to panel is **[car]**: one session ran 13,056 frames in 5 min. The 2026-10-06 pacing candidate is verified offline, not on the unit. The frame rate actually delivered, and what causes it, is still **[open]**. Provenance is listed in each note's Sources section; merged originals remain in git history.
-
-- [Stock decoder queue patch](DECODER_QUEUE_PATCH.md): physical QNX diagnosis, signature installation and rollback.
+Claims are tagged **[car]** for confirmed on the unit, **[decompile]** for reverse engineering, **[code]** for verified in the current source, and **[open]** for unverified. The earlier stream 111 path from decode to panel is **[car]**: one session ran 13,056 frames in 5 min. The 2026-10-06 pacing candidate is verified offline, not on the unit. The later 2026-10-21 physical session confirmed near-30 FPS arrival as **[car]**, as recorded in [wired performance measurements](WIRED_PERFORMANCE_2026-10-21.md). Long-run stability, final panel rate and the cause of the session-to-session improvement remain **[open]**. Provenance is listed in each note's Sources section; merged originals remain in git history.

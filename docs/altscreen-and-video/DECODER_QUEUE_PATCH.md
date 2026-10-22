@@ -67,5 +67,7 @@ firmware, exact two-byte changes, duplicates, corruption and partial patches.
 This reduces buffering in the stock main-screen decoder. AltScreen uses its
 own decoder/render path. The patch does not command the iPhone encoder to
 send 30 FPS and does not prove that the phone selected the Maps-30 profile.
-A new physical session and frame-arrival measurements are needed to establish
-any effect on AltScreen or CPU consumption.
+A subsequent physical session confirmed activation and measured AltScreen
+arrival near 30 FPS; see [wired performance measurements](WIRED_PERFORMANCE_2026-10-21.md).
+The sessions had different workloads, so causal attribution and long-term
+stability still need controlled validation.
