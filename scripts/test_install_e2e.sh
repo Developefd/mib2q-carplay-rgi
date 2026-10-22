@@ -14,6 +14,9 @@ UNPACKED=$ROOT/../../Tools/mhi2q-qemu/out/unpacked
 FW=$UNPACKED/MHI2Q_US_AUG22_P5087_MU1316/qnx6/MMX2QC/efs-sys/10/default/system
 APP_SI=qnx6/MMX2QC/app/10/default/app/eso/bin/apps/smartphone_integrator
 US_SI=$UNPACKED/MHI2Q_US_AUG22_P5087_MU1316/$APP_SI
+APP_AIRPLAY=qnx6/MMX2QC/app/10/default/app/eso/lib/libairplay.so
+US_AIRPLAY=$UNPACKED/MHI2Q_US_AUG22_P5087_MU1316/$APP_AIRPLAY
+CN_AIRPLAY=$UNPACKED/MHI2Q_CN_AUG22_K1004_MU1003_4M0906961EG/$APP_AIRPLAY
 CN_SI=$UNPACKED/MHI2Q_CN_AUG22_K1004_MU1003_4M0906961EG/$APP_SI
 MP=$(command -v micropython || command -v python3)
 SH=$(command -v mksh || command -v ksh)
@@ -28,11 +31,12 @@ e2p() { printf '0x000003a0 '; { printf '%s' "$1"; head -c $((25 - ${#1})) /dev/z
 
 unit() {   # unit [stock SI file] [stock deva size]: a fresh fake unit, BOTH jars left over from an older install
     U=$T/u; rm -rf "$U" "$T/mod"; mkdir -p "$U/$JARS" "$U/mnt/app/eso/bin/apps" "$U/mnt/app/armle/lib/dll" \
-        "$U/mnt/app/root/hooks" "$U/mnt/system/etc/scripts" "$U/mnt/system/etc/eso/production" "$U/tmp"
+        "$U/mnt/app/root/hooks" "$U/mnt/app/eso/lib" "$U/mnt/system/etc/scripts" "$U/mnt/system/etc/eso/production" "$U/tmp"
     cp "$FW/etc/eso/production/smartphone_integrator.json" "$FW/etc/eso/production/dio_manager.json" "$U/mnt/system/etc/eso/production/"
     cp "$FW"/etc/pf.*conf "$FW/etc/usblauncher_otg.lua" "$U/mnt/system/etc/"
     cp "$FW/etc/scripts/startncm.sh" "$FW/etc/scripts/stopncm.sh" "$U/mnt/system/etc/scripts/"
     cp "${1:-$US_SI}" "$U/mnt/app/eso/bin/apps/smartphone_integrator"
+    cp "${3:-$US_AIRPLAY}" "$U/mnt/app/eso/lib/libairplay.so"
     head -c "${2:-694904}" /dev/zero > "$U/mnt/app/armle/lib/dll/deva-ctrl-qc.so"
     echo old > "$U/$JARS/carplay_hook.jar"; echo old > "$U/$JARS/carplay_hook_cn.jar"
     cp -R "$MOD" "$T/mod"
@@ -61,6 +65,25 @@ cmp -s "$U/mnt/app/eso/bin/apps/smartphone_integrator" "$ROOT/deploy/smartphone_
 run "cat $T/us" && cmp -s "$U/mnt/app/eso/bin/apps/smartphone_integrator" "$ROOT/deploy/smartphone_integrator/smartphone_integrator" &&
     cmp -s "$U/mnt/app/eso/bin/apps/smartphone_integrator.carplay-stock" "$US_SI" || fail us-again "reinstall changed the SI or its stock copy"
 
+# Decoder library install is byte-exact, keeps the original across reinstall,
+# and uninstall restores that original rather than deleting a firmware library.
+LIB=mnt/app/eso/lib/libairplay.so
+python3 - "$US_AIRPLAY" "$U/$LIB" <<'PY'
+import sys
+from pathlib import Path
+stock, new = (Path(p).read_bytes() for p in sys.argv[1:])
+assert [i for i, (a,b) in enumerate(zip(stock,new)) if a != b] == [0x8c694, 0x8c6f4]
+assert len(stock) == len(new) and new[0x8c694] == new[0x8c6f4] == 2
+PY
+cmp -s "$U/$LIB.carplay-stock" "$US_AIRPLAY" || fail decoder "original backup changed"
+cp "$U/$LIB" "$T/decoder-installed"
+CARPLAY_SAVE_WAIT=0 "$SH" "$T/mod/custom.sh" uninstall > "$T/log" 2>&1 || fail decoder "uninstall failed"
+cmp -s "$U/$LIB" "$US_AIRPLAY" && [ ! -e "$U/$LIB.carplay-stock" ] || fail decoder "uninstall did not restore original"
+run "cat $T/us" || fail decoder "reinstall after uninstall failed"
+cmp -s "$U/$LIB" "$T/decoder-installed" || fail decoder "reinstall differs"
+# Restore the original reinstall log for existing idempotence assertions below.
+run "cat $T/us" || fail decoder "second reinstall failed"
+
 # usblauncher_otg.lua: only its two NCM command lines are patched - stock, an older fence of ours
 # (start line only) and the current one all end as the payload; a file without the lines is left alone
 LUA=mnt/system/etc/usblauncher_otg.lua; PAY=$MOD/carplay/ncm/payload/usblauncher_otg.lua
@@ -82,7 +105,8 @@ spatial | grep -q '^export AUDIO_SPATIAL=0 ' && grep -q '^export AUDIO_SPATIAL_A
 unit; run "cat $T/us" false || fail amp-none "install failed"
 spatial | grep -q '^export AUDIO_SPATIAL=0 ' && grep -q 'amplifier coding unreadable' "$T/log" || fail amp-none "unreadable coding kept the 6-channel path"
 
-unit "$CN_SI" 694860; run "cat $T/cn" || fail cn "install failed"
+unit "$CN_SI" 694860 "$CN_AIRPLAY"; run "cat $T/cn" || fail cn "install failed"
+cmp -s "$U/$LIB" "$CN_AIRPLAY" && [ ! -e "$U/$LIB.carplay-stock" ] || fail decoder-cn "unsupported library changed"
 grep -q 'region CN, brand AU' "$T/log" || fail cn "train not read"
 [ "$(cmp -l "$U/mnt/app/eso/bin/apps/smartphone_integrator" "$CN_SI" | wc -l | tr -d ' ')" = 4 ] &&
     [ -f "$U/mnt/app/eso/bin/apps/smartphone_integrator.carplay-stock" ] || fail cn "CN SI not patched in place"

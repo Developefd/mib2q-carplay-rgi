@@ -76,3 +76,5 @@ and input review resolutions, reproducible commands and latest result limits.
 ## 💡 Truth levels
 
 Claims are tagged **[car]** for confirmed on the unit, **[decompile]** for reverse engineering, **[code]** for verified in the current source, and **[open]** for unverified. The earlier stream 111 path from decode to panel is **[car]**: one session ran 13,056 frames in 5 min. The 2026-10-06 pacing candidate is verified offline, not on the unit. The frame rate actually delivered, and what causes it, is still **[open]**. Provenance is listed in each note's Sources section; merged originals remain in git history.
+
+- [Stock decoder queue patch](DECODER_QUEUE_PATCH.md): physical QNX diagnosis, signature installation and rollback.

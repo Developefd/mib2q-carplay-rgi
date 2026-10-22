@@ -7,6 +7,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 U=$ROOT/../../Tools/mhi2q-qemu/out/unpacked
 SI=qnx6/MMX2QC/app/10/default/app/eso/bin/apps/smartphone_integrator
+AIRPLAY=qnx6/MMX2QC/app/10/default/app/eso/lib/libairplay.so
 MCD=qnx6/MMX2QC/app/10/default/app/armle/usr/sbin/mcd
 P=$ROOT/deploy/binpatch/binpatch.py
 
@@ -30,6 +31,30 @@ for py in $pys; do
         "$py" "$P" mcd "$U/$fw/$MCD" "$T/mout" > /dev/null
         [ "$(cmp -l "$U/$fw/$MCD" "$T/mout" | wc -l | tr -d ' ')" = 5 ] || { echo "FAIL ($py $fw): mcd not exactly 5 bytes"; exit 1; }
     done
+    for fw in MHI2Q_US_AUG22_P5087_MU1316 MHI2Q_ER_AUG22_P5092_MU1329; do
+        rm -f "$T/decoder" "$T/decoder-again" "$T/decoder-refused"
+        "$py" "$P" airplay_decoder "$U/$fw/$AIRPLAY" "$T/decoder" > /dev/null
+        python3 - "$U/$fw/$AIRPLAY" "$T/decoder" "$T/partial" "$T/corrupt" "$T/duplicate" <<'PY'
+import sys
+from pathlib import Path
+stock, new = (Path(p).read_bytes() for p in sys.argv[1:3])
+assert len(new) == len(stock)
+assert [i for i, (a,b) in enumerate(zip(stock,new)) if a != b] == [0x8c694, 0x8c6f4]
+assert all(stock[i] == 4 and new[i] == 2 for i in (0x8c694, 0x8c6f4))
+partial = bytearray(stock); partial[0x8c694] = 2
+Path(sys.argv[3]).write_bytes(partial)
+corrupt = bytearray(new); corrupt[0x8c6f5] ^= 1
+Path(sys.argv[4]).write_bytes(corrupt)
+Path(sys.argv[5]).write_bytes(stock + stock[0x8c684:0x8c6b0])
+PY
+        rc=0; "$py" "$P" airplay_decoder "$T/decoder" "$T/decoder-again" > /dev/null || rc=$?
+        [ "$rc" = 3 ] && [ ! -e "$T/decoder-again" ] || { echo "FAIL ($py): decoder idempotence"; exit 1; }
+        for bad in "$T/partial" "$T/corrupt" "$T/duplicate" "$U/MHI2Q_CN_AUG22_K1004_MU1003_4M0906961EG/$AIRPLAY"; do
+            rc=0; "$py" "$P" airplay_decoder "$bad" "$T/decoder-refused" > /dev/null || rc=$?
+            [ "$rc" = 1 ] && [ ! -e "$T/decoder-refused" ] || { echo "FAIL ($py): decoder unsafe input accepted: $bad"; exit 1; }
+        done
+    done
+    echo "binpatch: decoder two bytes only US/EU; already patched, partial, corrupt, duplicate, CN refusal ($py) PASS"
     "$py" "$P" smartphone_integrator "$U/MHI2Q_US_AUG22_P5087_MU1316/$SI" "$T/us" > /dev/null
     cmp -s "$T/us" "$ROOT/deploy/smartphone_integrator/smartphone_integrator" || { echo "FAIL ($py): P5087 differs from the shipped SI"; exit 1; }
     "$py" "$P" mcd "$U/MHI2Q_US_AUG22_P5087_MU1316/$MCD" "$T/mus" > /dev/null

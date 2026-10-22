@@ -23,6 +23,15 @@ def h(s):
 
 # name -> [(context before, stock bytes, patched bytes, context after)]
 PATCHES = {
+    # Stock libairplay 210.81 (P5087/P5092): queue depths 4 -> 2, one imm8
+    # byte each. QNX denies runtime mprotect on the library's shared text.
+    # Both full contexts must match once; K1004's different library is refused.
+    'airplay_decoder': [
+        (h('03 30 84 e0 0c c0 84 e0 00 c0 8d e5 02 3c fe eb'), h('04'), h('02'),
+         h('00 a0 e3 3a 38 fe eb 00 00 50 e3 0c 00 85 e5 20 00 00 0a 07 10 a0 e1 4f 33 fe eb')),
+        (h('45 3b fe eb 00 20 a0 e1 c0 10 9f e5 07 00 a0 e1'), h('04'), h('02'),
+         h('30 a0 e3 01 10 84 e0 bc 36 fe eb 00 00 50 e3 00 50 a0 13 20 00 00 0a 05 00 a0 e1')),
+    ],
     # SI error re-arm (docs/connect-and-usb/USB_REPLUG_RECOVERY.md): the CarPlay device-error
     # path passes the real direction instead of 0, so a failed session re-arms on replug.
     # MOV R3, #0  ->  AND R3, R9, LR, LSR #6

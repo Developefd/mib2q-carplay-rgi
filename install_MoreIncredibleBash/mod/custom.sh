@@ -489,6 +489,27 @@ patch_si() {
     return 0
 }
 
+# ---- libairplay: both decoder command queues 4 -> 2 on the unit's own library --------
+# Shared text cannot be made writable on production QNX. Patch on disk instead;
+# existing mappings keep their old inode until the next CarPlay process starts.
+AIRPLAY_LIB=/mnt/app/eso/lib/libairplay.so
+patch_airplay_decoder() {
+    find_mp || { echo "  WARN no M.I.B. micropython - decoder queues stay stock"; return 0; }
+    [ -f "$AIRPLAY_LIB" ] || { echo "  WARN no $AIRPLAY_LIB"; return 0; }
+    src=$AIRPLAY_LIB; [ -f "$AIRPLAY_LIB.carplay-stock" ] && src=$AIRPLAY_LIB.carplay-stock
+    rm -f "$AIRPLAY_LIB.carplay-new"
+    "$mp" -X heapsize=8M "$RES/binpatch.py" airplay_decoder "$src" "$AIRPLAY_LIB.carplay-new"; rc=$?
+    case $rc in
+        0) backup_once "$AIRPLAY_LIB" "$AIRPLAY_LIB.carplay-stock" || { rm -f "$AIRPLAY_LIB.carplay-new"; return 1; }
+           chmod 755 "$AIRPLAY_LIB.carplay-new" && mv -f "$AIRPLAY_LIB.carplay-new" "$AIRPLAY_LIB" ||
+               { rm -f "$AIRPLAY_LIB.carplay-new"; echo "FAILED activate $AIRPLAY_LIB"; return 1; }
+           echo "  $AIRPLAY_LIB (decoder queues 4 -> 2)" ;;
+        3) echo "  $AIRPLAY_LIB already has depth-2 decoder queues" ;;
+        *) rm -f "$AIRPLAY_LIB.carplay-new"; echo "  WARN decoder queues unchanged (unsupported library)" ;;
+    esac
+    return 0
+}
+
 # ---- mcd: detector fan-out coalescing, patched into THIS unit's own binary ------------
 # Same signature patcher as the SI fix; mcd is byte-identical on P5087/P5092/K1004, so one
 # patch covers all three.  Replaces the detector loop's sigwaitinfo wait with delay(200),
@@ -659,6 +680,7 @@ EOF
         else echo "  WARN could not remove $j"; fi
     done
     patch_si || exit 1
+    patch_airplay_decoder || exit 1
     patch_mcd || exit 1
     patch_mcd_conf || exit 1
     gate_audio || exit 1
@@ -689,6 +711,7 @@ uninstall)
     [ -e "$CFG.carplay-stock" ] && mv -f "$CFG.carplay-stock" "$CFG"
     [ -e "$DIO.carplay-stock" ] && mv -f "$DIO.carplay-stock" "$DIO"
     [ -e "$SI_BIN.carplay-stock" ] && mv -f "$SI_BIN.carplay-stock" "$SI_BIN"
+    [ -e "$AIRPLAY_LIB.carplay-stock" ] && mv -f "$AIRPLAY_LIB.carplay-stock" "$AIRPLAY_LIB"
     [ -e "$MCD_BIN.carplay-stock" ] && mv -f "$MCD_BIN.carplay-stock" "$MCD_BIN"
     [ -e "$MCD_CONF.carplay-stock" ] && mv -f "$MCD_CONF.carplay-stock" "$MCD_CONF"
     [ -e "$LANG_ZIP.carplay-stock" ] && mv -f "$LANG_ZIP.carplay-stock" "$LANG_ZIP" && echo "  restored $LANG_ZIP"

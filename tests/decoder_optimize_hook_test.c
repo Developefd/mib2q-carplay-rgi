@@ -23,6 +23,7 @@
 
 /* statics of the module under test */
 uintptr_t dec_base_from_anchors(uintptr_t delegate_, uintptr_t create, uintptr_t control);
+uintptr_t dec_base_from_library(void* library, void* (*lookup)(void*, const char*));
 bool dec_site_matches(const uint8_t* site, const uint8_t sig[12]);
 bool dec_readable(const void* addr, size_t len);
 bool decoder_optimize_apply(uintptr_t base);
@@ -97,6 +98,27 @@ static void test_base_rule(void) {
     printf("  base rule: deltas gate, probe+ELF identity confirm; shifted base refused unread\n");
 }
 
+static int library_token, lookup_calls;
+static void* scoped_lookup(void* handle, const char* name) {
+    uintptr_t base = (uintptr_t)elf_page;
+    assert(handle == &library_token);
+    ++lookup_calls;
+    if (strcmp(name, "AirPlayReceiverServerSetDelegate") == 0) return (void*)(base + OFF_DELEGATE);
+    if (strcmp(name, "AirPlayReceiverServerCreate") == 0) return (void*)(base + OFF_CREATE);
+    if (strcmp(name, "AirPlayReceiverServerControl") == 0) return (void*)(base + OFF_CONTROL);
+    assert(0);
+    return NULL;
+}
+static void test_library_scope(void) {
+    elf_identity(elf_page);
+    assert(dec_base_from_library(NULL, scoped_lookup) == 0);
+    assert(dec_base_from_library(&library_token, NULL) == 0);
+    assert(lookup_calls == 0);
+    assert(dec_base_from_library(&library_token, scoped_lookup) == (uintptr_t)elf_page);
+    assert(lookup_calls == 3);
+    printf("  scope: all anchors resolved through explicit library handle\n");
+}
+
 static void test_site_match(void) {
     const uint8_t good[12] = { 0x04,0x30,0xa0,0xe3, 0x01,0x10,0x84,0xe0, 0xbc,0x36,0xfe,0xeb };
     uint8_t flip[12];
@@ -150,6 +172,25 @@ static void test_apply(void) {
     assert(m[SITE_A] == 2 && memcmp(m + SITE_A + 4, SIG_A + 4, 8) == 0);
     assert(m[SITE_B] == 2 && memcmp(m + SITE_B + 4, SIG_B + 4, 8) == 0);
     printf("  apply: both sites patched to 2, tails intact\n");
+
+    /* File-patched production image: both full signatures verified, no mprotect. */
+    prot_calls = 0;
+    prot_fail_open = 1;
+    assert(decoder_optimize_apply((uintptr_t)m) == true);
+    assert(prot_calls == 0);
+    /* An optimized immediate cannot hide corruption in the rest of the MOV. */
+    m[SITE_A + 1] ^= 1;
+    assert(decoder_optimize_apply((uintptr_t)m) == false);
+    assert(prot_calls == 0);
+    m[SITE_A + 1] ^= 1;
+    /* Mixed depths are refused in either direction without writes. */
+    m[SITE_A] = 4;
+    assert(decoder_optimize_apply((uintptr_t)m) == false);
+    assert(prot_calls == 0 && m[SITE_A] == 4 && m[SITE_B] == 2);
+    m[SITE_A] = 2; m[SITE_B] = 4;
+    assert(decoder_optimize_apply((uintptr_t)m) == false);
+    assert(prot_calls == 0 && m[SITE_A] == 2 && m[SITE_B] == 4);
+    prot_fail_open = 0;
 
     /* reset to stock for the refusal cases */
     m[SITE_A] = SIG_A[0];
@@ -233,6 +274,7 @@ int main(void) {
     assert(log_init(&lc) == HOOK_OK);
 
     test_base_rule();
+    test_library_scope();
     test_site_match();
     test_readable_probe();
     test_apply();

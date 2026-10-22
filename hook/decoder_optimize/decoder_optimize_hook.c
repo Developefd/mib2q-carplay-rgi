@@ -49,7 +49,10 @@
  *     anchors 0x201e4/0x20b40/0x220d0, both sites match.
  *   K1004 MU1003 CN: different lib - deltas/identity/signatures refuse.
  *
- * Always enabled: both queues use depth 2 after library/signature validation.
+ * The installer patches the unit's own file by signature: production QNX
+ * refuses mprotect on its shared text (EACCES). Already-patched images are
+ * verified without opening a protection session; runtime patching remains a
+ * fallback on systems which allow it. Both queues always target depth 2.
  * scripts/test_decoder_optimize_site.sh re-verifies the signatures against
  * the unpacked firmware trees; tests/decoder_optimize_hook_test.c drives base
  * gating and decoder_optimize_apply on the host, including the partial-patch
@@ -68,9 +71,8 @@
 
 DEFINE_LOG_MODULE(DECODER_OPTIMIZE);
 
-/* libairplay 210.81 (P5087/P5092): three exports of known vaddr.  The hook
- * never interposes any of them (carplay_hook.exports.map), so dlsym lands in
- * the real library. */
+/* libairplay 210.81 (P5087/P5092): three exports of known vaddr. Resolve
+ * through its own handle: QNX RTLD_DEFAULT does not expose these exports. */
 #define ANCHOR_DELEGATE_NAME  "AirPlayReceiverServerSetDelegate"
 #define ANCHOR_DELEGATE_OFF   0x201e4u
 #define ANCHOR_CREATE_NAME    "AirPlayReceiverServerCreate"
@@ -155,6 +157,18 @@ DECODER_OPTIMIZE_TESTABLE uintptr_t dec_base_from_anchors(uintptr_t delegate_, u
     return base;
 }
 
+/* Keep the handle for the process lifetime. A global lookup can be empty on
+ * QNX, or resolve an interposer instead of the stock image. */
+DECODER_OPTIMIZE_TESTABLE uintptr_t dec_base_from_library(
+        void* library, void* (*lookup)(void*, const char*)) {
+    uintptr_t delegate_, create, control;
+    if (!library || !lookup) return 0;
+    delegate_ = (uintptr_t)lookup(library, ANCHOR_DELEGATE_NAME);
+    create = (uintptr_t)lookup(library, ANCHOR_CREATE_NAME);
+    control = (uintptr_t)lookup(library, ANCHOR_CONTROL_NAME);
+    return dec_base_from_anchors(delegate_, create, control);
+}
+
 DECODER_OPTIMIZE_TESTABLE bool dec_site_matches(const uint8_t* site, const uint8_t sig[12]) {
     return memcmp(site, sig, 12) == 0;
 }
@@ -196,7 +210,7 @@ DECODER_OPTIMIZE_TESTABLE bool decoder_optimize_apply(uintptr_t base) {
     uintptr_t page_lo = lo & ~(uintptr_t)0xfffu;
     uintptr_t page_hi = hi & ~(uintptr_t)0xfffu;
     size_t len = (size_t)(page_hi + 0x1000 - page_lo);
-    unsigned i;
+    unsigned i, done = 0;
 
     /* Rule 2+3: all probing and verification before the first write.  The
      * byte-level log line is only reachable after the probe succeeded - a
@@ -205,6 +219,10 @@ DECODER_OPTIMIZE_TESTABLE bool decoder_optimize_apply(uintptr_t base) {
         const uint8_t* p = (const uint8_t*)(base + sites[i].off);
         bool readable = dec_readable(p, 12);
         if (readable && dec_site_matches(p, sites[i].sig)) continue;
+        if (readable && p[0] == depth && memcmp(p + 1, sites[i].sig + 1, 11) == 0) {
+            ++done;
+            continue;
+        }
         if (!readable)
             LOG_WARN(LOG_MODULE, "%s (+0x%x) is unreadable at base %p -"
                                  " not the supported libairplay build, no patch",
@@ -213,6 +231,16 @@ DECODER_OPTIMIZE_TESTABLE bool decoder_optimize_apply(uintptr_t base) {
             LOG_WARN(LOG_MODULE, "signature mismatch at %s (+0x%x): %02x %02x %02x %02x -"
                                  " not the supported libairplay build, no patch",
                      sites[i].what, sites[i].off, p[0], p[1], p[2], p[3]);
+        return false;
+    }
+
+    if (done == 2) {
+        LOG_WARN(LOG_MODULE, "queue depth %u already installed (decode feed +0x%x, present +0x%x)",
+                 depth, SITE_QUEUE_A, SITE_QUEUE_B);
+        return true;
+    }
+    if (done) {
+        LOG_WARN(LOG_MODULE, "mixed queue depths - refusing partial patch");
         return false;
     }
 
@@ -236,7 +264,7 @@ DECODER_OPTIMIZE_TESTABLE bool decoder_optimize_apply(uintptr_t base) {
 
     for (i = 0; i < 2; ++i) {
         uint8_t* p = (uint8_t*)(base + sites[i].off);
-        if (p[0] == depth && memcmp(p + 4, sites[i].sig + 4, 8) == 0) continue;
+        if (p[0] == depth && memcmp(p + 1, sites[i].sig + 1, 11) == 0) continue;
         LOG_WARN(LOG_MODULE, "write-back verify failed at %s (+0x%x)", sites[i].what, sites[i].off);
         return false;
     }
@@ -246,12 +274,11 @@ DECODER_OPTIMIZE_TESTABLE bool decoder_optimize_apply(uintptr_t base) {
 }
 
 static void decoder_optimize_init(void) {
-    uintptr_t delegate_, create, control, base;
+    static void* library;
+    uintptr_t base;
 
-    delegate_ = (uintptr_t)dlsym(RTLD_DEFAULT, ANCHOR_DELEGATE_NAME);
-    create    = (uintptr_t)dlsym(RTLD_DEFAULT, ANCHOR_CREATE_NAME);
-    control   = (uintptr_t)dlsym(RTLD_DEFAULT, ANCHOR_CONTROL_NAME);
-    base = dec_base_from_anchors(delegate_, create, control);
+    if (!library) library = dlopen("/mnt/app/eso/lib/libairplay.so", RTLD_NOW | RTLD_LOCAL);
+    base = dec_base_from_library(library, dlsym);
     if (!base) {
         LOG_WARN(LOG_MODULE, "anchors %s/%s/%s do not resolve to a stock 210.81 libairplay -"
                              " unsupported build, staying stock",
