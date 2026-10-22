@@ -33,6 +33,7 @@
 #include "../framework/logging.h"
 #include "../framework/bus.h"
 #include "altscreen_hook.h"
+#include "maps_profile.h"
 #include "altscreen_av.h"
 #include "../../common/alt_timing_stats.h"
 #include "avcc_config.h"
@@ -2742,14 +2743,16 @@ static void altscreen_shutdown(void)
     altav_shutdown();
 }
 
-/* altScreen lives entirely on the AirPlay side: it negotiates the feature in
- * the SETUP response, publishes the two-display contract in /info, and owns the
- * type-111 receiver that TearDown must stop.  It reads no iAP2 message.
+/* AltScreen selects the Maps source-rate profile in iAP2 Identify, then
+ * enables the feature in the SETUP response, publishes the two-display
+ * contract in /info, and owns the
+ * type-111 receiver that TearDown must stop.
  * AirPlayReceiverSessionSetNightMode stays interposed here — it has exactly one
  * consumer, so it needs no framework seam. */
 const hook_module_def_t altscreen_module_def = {
     .name = "altscreen",
     .priority = HOOK_PRIORITY_NORMAL,
+    .on_identify = alt_maps_profile_identify,
     .on_init = altscreen_init,
     .on_shutdown = altscreen_shutdown,
     .airplay = {

@@ -102,6 +102,11 @@ cc -std=gnu99 -O1 -Wall -Wextra -Werror \
     hook/framework/iap2_protocol.c -lpthread -lz -lm -o "$OUT/coverart_pipeline"
 "$OUT/coverart_pipeline"
 
+printf '%-32s ' altscreen_maps_profile_test
+cc -std=gnu99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined \
+    tests/altscreen_maps_profile_test.c -o "$OUT/alt_maps_profile"
+"$OUT/alt_maps_profile"
+
 printf '%-32s ' altscreen_av_test
 cc -std=gnu99 -O2 -Wall -Wextra -Werror \
     -Wno-unused-variable -Wno-unused-but-set-variable -Ihook \
