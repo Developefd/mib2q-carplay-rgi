@@ -21,7 +21,7 @@ measurements, not a camera measurement of the instrument-cluster panel.[^1][^2]
 | Arrival interval, window averages | 46.00–49.01 ms | 33.33–34.86 ms |
 | Source PTS interval, window averages | 46.00–49.00 ms | 33.33–34.89 ms |
 | Full-present time, window averages | 7.28–7.98 ms | 6.04–6.88 ms |
-| DIO CPU, one-core scale | 44.46% | 39.39% |
+| DIO CPU, 100% = one core / 400% = all cores | 44.46% | 39.39% |
 | Maneuver renderer workload | Almost idle | Active |
 
 The sessions were not a controlled A/B experiment: maneuver activity and
@@ -81,9 +81,11 @@ not inspected directly.[^1][^3]
 
 The HU has four CPU cores. On the **one-core scale**, one fully occupied core
 is 100% and all four cores together are 400%. The equivalent share of total
-four-core capacity is the one-core percentage divided by four.[^1]
+four-core capacity is the one-core percentage divided by four. For example,
+DIO at 39.39% on the 400%-maximum scale occupies the equivalent of 0.3939
+cores, or 9.85% of total four-core capacity.[^1]
 
-| Process | Mean, % of one core | Sample range, % of one core | Mean, % of all four cores |
+| Process | Mean CPU, 400% maximum | Sample range, 400% maximum | Share of four-core capacity, 100% maximum |
 |---|---:|---:|---:|
 | `dio_manager` | 39.39% | 37.27–41.83% | 9.85% |
 | `altscreen_render` | 11.43% | 10.23–12.80% | 2.86% |
